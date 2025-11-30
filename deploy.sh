@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# VPS 一键部署脚本 - 修复 Nginx 配置问题版本
+# VPS 一键部署脚本 - 443端口释放给S-UI面板版本
 # 使用方法: bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/deploy.sh)
 
-set -e  # 遇到错误立即退出
+set -e
 
 # 颜色定义
 RED='\033[0;31m'
@@ -12,7 +12,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# 日志函数
 log() { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
@@ -29,7 +28,7 @@ show_banner() {
        \  /  | |    | |____| |____) |
         \/   |_|    |______|_|_____/ 
         
-    VPS 一键部署脚本 - 修复版
+    VPS 一键部署脚本 - 443端口优化版
 EOF
     echo -e "${NC}"
 }
@@ -47,11 +46,6 @@ check_system() {
     
     source /etc/os-release
     log "操作系统: $NAME $VERSION"
-    
-    # 检查是否为 Ubuntu 或 Debian
-    if [[ "$ID" != "ubuntu" && "$ID" != "debian" ]]; then
-        warn "此脚本主要针对 Ubuntu/Debian 系统，其他系统可能不兼容"
-    fi
 }
 
 # 获取用户输入
@@ -62,6 +56,19 @@ get_user_input() {
     read -p "请输入域名 (例如: myhouse.mycloudshare.org): " DOMAIN
     if [ -z "$DOMAIN" ]; then
         error "域名不能为空"
+    fi
+    
+    # 检查域名解析
+    log "检查域名解析..."
+    if ! nslookup $DOMAIN &>/dev/null; then
+        SERVER_IP=$(curl -s ifconfig.me)
+        warn "域名 $DOMAIN 无法解析或未指向当前服务器"
+        log "当前服务器IP: $SERVER_IP"
+        log "请确保域名A记录指向此IP地址"
+        read -p "继续部署? (y/N): " continue_deploy
+        if [[ ! $continue_deploy =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
     fi
     
     read -p "请输入邮箱 (用于 SSL 证书): " EMAIL
@@ -76,6 +83,7 @@ get_user_input() {
     log "域名: $DOMAIN"
     log "邮箱: $EMAIL"
     log "Reality 握手服务器: www.51kankan.vip"
+    log "Web服务端口: 8443 (释放443给S-UI面板使用)"
     echo
     
     read -p "确认开始部署? (y/N): " confirm
@@ -83,36 +91,6 @@ get_user_input() {
         log "用户取消部署"
         exit 0
     fi
-}
-
-# 释放 80 端口
-free_port_80() {
-    step "检查并释放 80 端口..."
-    
-    # 检查 80 端口是否被占用
-    if netstat -tln | grep ":80 " > /dev/null; then
-        warn "80 端口被占用，停止相关服务..."
-        
-        # 尝试停止 Nginx
-        if systemctl is-active --quiet nginx; then
-            systemctl stop nginx
-            log "已停止 Nginx"
-        fi
-        
-        # 检查是否还有其他进程占用 80 端口
-        if netstat -tln | grep ":80 " > /dev/null; then
-            warn "还有其他进程占用 80 端口，强制释放..."
-            fuser -k 80/tcp 2>/dev/null || true
-            sleep 2
-        fi
-        
-        # 再次检查
-        if netstat -tln | grep ":80 " > /dev/null; then
-            error "无法释放 80 端口，请手动检查并释放后重新运行脚本"
-        fi
-    fi
-    
-    log "80 端口已释放"
 }
 
 # 系统更新和基础安装
@@ -132,11 +110,10 @@ configure_firewall() {
     
     ufw --force enable
     
-    # 开放端口
-    ports=(22 53 80 443 3000 2095 25500)
+    # 开放端口 - 注意：443端口留给S-UI面板，Web服务使用8443
+    ports=(22 53 80 443 8443 3000 2095 25500)
     for port in "${ports[@]}"; do
         ufw allow $port/tcp
-        ufw allow $port/udp 2>/dev/null || true
     done
     
     ufw status verbose
@@ -150,21 +127,29 @@ setup_ssl() {
     # 安装 acme.sh
     curl https://get.acme.sh | sh -s email=$EMAIL
     source ~/.bashrc
-    
-    # 创建符号链接
     ln -sf /root/.acme.sh/acme.sh /usr/local/bin/acme.sh
     
     # 设置 CA
     acme.sh --set-default-ca --server letsencrypt
     
-    # 释放 80 端口并申请证书
-    free_port_80
+    # 创建web目录用于证书验证
+    mkdir -p /var/www/html
+    echo "ACME Challenge" > /var/www/html/index.html
     
-    log "申请 SSL 证书..."
-    if acme.sh --issue -d $DOMAIN --standalone --keylength ec-256; then
+    # 使用webroot方式申请证书
+    log "使用 webroot 方式申请 SSL 证书..."
+    if acme.sh --issue -d $DOMAIN --webroot /var/www/html --keylength ec-256; then
         log "SSL 证书申请成功"
     else
-        error "SSL 证书申请失败，请检查域名解析和网络连接"
+        warn "webroot 方式失败，尝试 standalone 方式..."
+        systemctl stop nginx 2>/dev/null || true
+        sleep 2
+        if acme.sh --issue -d $DOMAIN --standalone --keylength ec-256; then
+            log "SSL 证书申请成功"
+            systemctl start nginx
+        else
+            error "SSL 证书申请失败"
+        fi
     fi
     
     # 安装证书
@@ -175,7 +160,6 @@ setup_ssl() {
     # 设置自动续期
     cat > /root/cert-monitor.sh << EOF
 #!/bin/bash
-# 使用 webroot 方式续期，避免端口冲突
 /root/.acme.sh/acme.sh --renew -d $DOMAIN --force --ecc --webroot /var/www/html
 EOF
     
@@ -325,6 +309,9 @@ setup_web_interface() {
             color: #48bb78;
             margin-top: 0.5rem;
         }
+        .status-warning {
+            color: #e53e3e;
+        }
         footer {
             text-align: center;
             color: rgba(255, 255, 255, 0.7);
@@ -332,20 +319,35 @@ setup_web_interface() {
             margin-top: 3rem;
             border-top: 1px solid rgba(255, 255, 255, 0.2);
         }
+        .port-info {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin: 2rem 0;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>🚀 服务管理中心</h1>
-            <p>一站式网络服务管理平台</p>
+            <p>一站式网络服务管理平台 - 443端口已释放给VLESS节点使用</p>
         </header>
+
+        <div class="port-info">
+            <h3>📡 端口配置说明</h3>
+            <p><strong>Web服务端口:</strong> 8443 (HTTPS)</p>
+            <p><strong>VLESS节点端口:</strong> 443 (已释放)</p>
+            <p><strong>说明:</strong> 443端口已专门用于VLESS Reality节点，Web服务改用8443端口</p>
+        </div>
         
         <div class="service-grid">
             <div class="service-card">
                 <h3>🔄 订阅转换</h3>
                 <p>支持 VLESS、VMess、Trojan 等协议转换，集成 ACL4SSR 规则</p>
                 <a href="/sub" class="btn">进入转换工具</a>
+                <div class="status">访问端口: 8443</div>
             </div>
             
             <div class="service-card">
@@ -358,14 +360,15 @@ setup_web_interface() {
             <div class="service-card">
                 <h3>⚡ S-UI 面板</h3>
                 <p>节点管理和流量监控，支持 Xray 核心</p>
-                <a href="http://$DOMAIN:2095" class="btn" target="_blank">管理面板</a>
-                <div class="status">端口: 2095</div>
+                <a href="http://$DOMAIN:2095/app" class="btn" target="_blank">管理面板</a>
+                <div class="status">端口: 2095/app</div>
+                <div class="status status-warning">VLESS节点端口: 443 (已释放)</div>
             </div>
         </div>
         
         <footer>
             <p>&copy; 2025 服务管理中心 | 域名: $DOMAIN</p>
-            <p>Reality 握手服务器: www.51kankan.vip</p>
+            <p>Reality 握手服务器: www.51kankan.vip | Web服务端口: 8443</p>
         </footer>
     </div>
 </body>
@@ -465,6 +468,14 @@ EOF
             gap: 15px;
             margin-bottom: 15px;
         }
+        .port-notice {
+            background: #fed7d7;
+            border: 1px solid #feb2b2;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -475,6 +486,10 @@ EOF
             <h1>🔄 订阅转换工具</h1>
             <p class="description">支持 VLESS、VMess、Trojan 等协议转换为 Clash 配置</p>
         </header>
+
+        <div class="port-notice">
+            <strong>⚠️ 端口配置说明:</strong> Web服务使用8443端口，443端口已专门用于VLESS Reality节点
+        </div>
 
         <div class="input-group">
             <label for="subscriptionUrl">订阅链接：</label>
@@ -565,23 +580,25 @@ EOF
     log "网页界面设置完成"
 }
 
-# 配置 Nginx
+# 配置 Nginx (使用8443端口，释放443给S-UI面板)
 setup_nginx() {
-    step "配置 Nginx..."
+    step "配置 Nginx (使用8443端口)..."
     
     # 备份原有配置
     cp /etc/nginx/sites-available/default /etc/nginx/sites-available/default.backup 2>/dev/null || true
     
-    # 创建新的 Nginx 配置
+    # 创建新的 Nginx 配置 - 使用8443端口
     cat > /etc/nginx/sites-available/default << EOF
+# HTTP 重定向到 HTTPS (8443)
 server {
     listen 80;
     server_name $DOMAIN;
-    return 301 https://\$server_name\$request_uri;
+    return 301 https://\$server_name:8443\$request_uri;
 }
 
+# HTTPS 服务 (使用8443端口)
 server {
-    listen 443 ssl http2;
+    listen 8443 ssl http2;
     server_name $DOMAIN;
     
     ssl_certificate /root/server.crt;
@@ -634,12 +651,12 @@ EOF
     
     # 检查 Nginx 状态
     if systemctl is-active --quiet nginx; then
-        log "Nginx 启动成功"
+        log "Nginx 启动成功 (8443端口)"
     else
         error "Nginx 启动失败，请检查错误日志: journalctl -u nginx -n 20"
     fi
     
-    log "Nginx 配置完成"
+    log "Nginx 配置完成 (8443端口)"
 }
 
 # 安装 AdGuard Home
@@ -659,6 +676,11 @@ install_sui() {
     
     if bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh); then
         log "S-UI 面板安装完成"
+        
+        # 提示用户可以在S-UI面板中使用443端口
+        echo
+        log "✅ 现在您可以在 S-UI 面板中使用 443 端口创建 VLESS 节点了！"
+        log "   因为 Web 服务已经改为使用 8443 端口"
     else
         warn "S-UI 面板安装失败，跳过..."
     fi
@@ -670,7 +692,7 @@ check_services() {
     
     echo
     log "=== 服务状态 ==="
-    local services=("nginx" "subconverter" "AdGuardHome")
+    local services=("nginx" "subconverter")
     for service in "${services[@]}"; do
         if systemctl is-active --quiet $service; then
             log "✅ $service: 运行中"
@@ -679,9 +701,16 @@ check_services() {
         fi
     done
     
+    # 检查 AdGuard Home
+    if systemctl is-active --quiet AdGuardHome 2>/dev/null; then
+        log "✅ AdGuardHome: 运行中"
+    else
+        warn "❌ AdGuardHome: 未运行"
+    fi
+    
     echo
     log "=== 端口监听 ==="
-    local ports=("80" "443" "25500" "3000" "2095")
+    local ports=("80" "8443" "25500" "3000" "2095" "443")
     for port in "${ports[@]}"; do
         if netstat -tln | grep -q ":$port "; then
             log "✅ 端口 $port: 已监听"
@@ -700,17 +729,21 @@ show_result() {
     echo "=========================================="
     echo -e "${NC}"
     
-    log "🌐 主页面: https://$DOMAIN"
-    log "🔄 订阅转换: https://$DOMAIN/sub"
+    log "🌐 主页面: https://$DOMAIN:8443"
+    log "🔄 订阅转换: https://$DOMAIN:8443/sub"
     log "🛡️ AdGuard Home: http://$DOMAIN:3000"
-    log "⚡ S-UI 面板: http://$DOMAIN:2095"
+    log "⚡ S-UI 面板: http://$DOMAIN:2095/app"
     echo
-    log "🎯 Reality 握手服务器: www.51kankan.vip"
+    log "🎯 重要提示:"
+    log "✅ 443端口已释放，现在可以在S-UI面板中创建VLESS节点使用443端口"
+    log "✅ Web服务改用8443端口访问"
+    log "✅ Reality 握手服务器: www.51kankan.vip"
     echo
     warn "后续操作:"
     echo "1. 配置 AdGuard Home: 访问 http://$DOMAIN:3000"
-    echo "2. 配置 S-UI 面板: 访问 http://$DOMAIN:2095"
-    echo "3. 测试订阅转换: 访问 https://$DOMAIN/sub"
+    echo "2. 配置 S-UI 面板: 访问 http://$DOMAIN:2095/app"
+    echo "3. 在S-UI面板中使用443端口创建VLESS Reality节点"
+    echo "4. 测试订阅转换: 访问 https://$DOMAIN:8443/sub"
     echo
     log "保存此信息以便后续使用"
     echo "=========================================="

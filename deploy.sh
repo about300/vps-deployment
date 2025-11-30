@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# VPS 一键部署脚本 - 修复 SSL 证书问题版本
+# VPS 一键部署脚本 - 修复 Nginx 配置问题版本
 # 使用方法: bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/deploy.sh)
 
 set -e  # 遇到错误立即退出
@@ -172,7 +172,7 @@ setup_ssl() {
         --key-file /root/server.key \
         --fullchain-file /root/server.crt
     
-    # 设置自动续期（使用 webroot 方式避免端口冲突）
+    # 设置自动续期
     cat > /root/cert-monitor.sh << EOF
 #!/bin/bash
 # 使用 webroot 方式续期，避免端口冲突
@@ -569,6 +569,10 @@ EOF
 setup_nginx() {
     step "配置 Nginx..."
     
+    # 备份原有配置
+    cp /etc/nginx/sites-available/default /etc/nginx/sites-available/default.backup 2>/dev/null || true
+    
+    # 创建新的 Nginx 配置
     cat > /etc/nginx/sites-available/default << EOF
 server {
     listen 80;
@@ -584,19 +588,23 @@ server {
     ssl_certificate_key /root/server.key;
     
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512;
+    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
     
     root /var/www/html;
     index index.html;
     
+    # 静态文件服务
     location / {
         try_files \$uri \$uri/ =404;
     }
     
+    # 订阅转换页面
     location = /sub {
         try_files /sub.html =404;
     }
     
+    # 订阅转换API代理
     location /sub {
         proxy_pass http://127.0.0.1:25500;
         proxy_set_header Host \$host;
@@ -604,6 +612,7 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         
+        # 增加超时时间
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
@@ -611,11 +620,25 @@ server {
 }
 EOF
 
-    # 启动 Nginx
-    systemctl start nginx
-    systemctl enable nginx
+    # 测试 Nginx 配置
+    log "测试 Nginx 配置..."
+    if nginx -t; then
+        log "Nginx 配置测试成功"
+    else
+        error "Nginx 配置测试失败，请检查配置文件"
+    fi
     
-    nginx -t && systemctl reload nginx
+    # 启动 Nginx
+    systemctl enable nginx
+    systemctl restart nginx
+    
+    # 检查 Nginx 状态
+    if systemctl is-active --quiet nginx; then
+        log "Nginx 启动成功"
+    else
+        error "Nginx 启动失败，请检查错误日志: journalctl -u nginx -n 20"
+    fi
+    
     log "Nginx 配置完成"
 }
 

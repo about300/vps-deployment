@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# VPS 一键部署脚本
-# 使用方法: bash <(curl -sL https://raw.githubusercontent.com/你的用户名/vps-deployment/main/deploy.sh)
+# VPS 一键部署脚本 - 修复 SSL 证书问题版本
+# 使用方法: bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/deploy.sh)
 
 set -e  # 遇到错误立即退出
 
@@ -29,7 +29,7 @@ show_banner() {
        \  /  | |    | |____| |____) |
         \/   |_|    |______|_|_____/ 
         
-    VPS 一键部署脚本
+    VPS 一键部署脚本 - 修复版
 EOF
     echo -e "${NC}"
 }
@@ -85,6 +85,36 @@ get_user_input() {
     fi
 }
 
+# 释放 80 端口
+free_port_80() {
+    step "检查并释放 80 端口..."
+    
+    # 检查 80 端口是否被占用
+    if netstat -tln | grep ":80 " > /dev/null; then
+        warn "80 端口被占用，停止相关服务..."
+        
+        # 尝试停止 Nginx
+        if systemctl is-active --quiet nginx; then
+            systemctl stop nginx
+            log "已停止 Nginx"
+        fi
+        
+        # 检查是否还有其他进程占用 80 端口
+        if netstat -tln | grep ":80 " > /dev/null; then
+            warn "还有其他进程占用 80 端口，强制释放..."
+            fuser -k 80/tcp 2>/dev/null || true
+            sleep 2
+        fi
+        
+        # 再次检查
+        if netstat -tln | grep ":80 " > /dev/null; then
+            error "无法释放 80 端口，请手动检查并释放后重新运行脚本"
+        fi
+    fi
+    
+    log "80 端口已释放"
+}
+
 # 系统更新和基础安装
 install_basics() {
     step "更新系统并安装基础软件..."
@@ -124,21 +154,29 @@ setup_ssl() {
     # 创建符号链接
     ln -sf /root/.acme.sh/acme.sh /usr/local/bin/acme.sh
     
-    # 设置 CA 并申请证书
+    # 设置 CA
     acme.sh --set-default-ca --server letsencrypt
-    acme.sh --issue -d $DOMAIN --standalone --keylength ec-256
+    
+    # 释放 80 端口并申请证书
+    free_port_80
+    
+    log "申请 SSL 证书..."
+    if acme.sh --issue -d $DOMAIN --standalone --keylength ec-256; then
+        log "SSL 证书申请成功"
+    else
+        error "SSL 证书申请失败，请检查域名解析和网络连接"
+    fi
     
     # 安装证书
     acme.sh --install-cert -d $DOMAIN --ecc \
         --key-file /root/server.key \
         --fullchain-file /root/server.crt
     
-    # 设置自动续期
+    # 设置自动续期（使用 webroot 方式避免端口冲突）
     cat > /root/cert-monitor.sh << EOF
 #!/bin/bash
-/root/.acme.sh/acme.sh --renew -d $DOMAIN --force --ecc \
-    --key-file /root/server.key \
-    --fullchain-file /root/server.crt
+# 使用 webroot 方式续期，避免端口冲突
+/root/.acme.sh/acme.sh --renew -d $DOMAIN --force --ecc --webroot /var/www/html
 EOF
     
     chmod +x /root/cert-monitor.sh
@@ -196,23 +234,7 @@ setup_web_interface() {
     
     mkdir -p /var/www/html
     
-    # 下载网页文件
-    local pages_url="https://raw.githubusercontent.com/你的用户名/vps-deployment/main/pages"
-    
-    if ! wget -q -O /var/www/html/index.html "$pages_url/index.html"; then
-        warn "无法下载主页面，使用默认页面"
-        create_default_pages
-    else
-        # 替换域名变量
-        sed -i "s|MY_DOMAIN|$DOMAIN|g" /var/www/html/index.html
-        sed -i "s|MY_DOMAIN|$DOMAIN|g" /var/www/html/sub.html
-    fi
-    
-    log "网页界面设置完成"
-}
-
-# 创建默认页面（备用）
-create_default_pages() {
+    # 创建主页面
     cat > /var/www/html/index.html << EOF
 <!DOCTYPE html>
 <html lang="zh">
@@ -221,71 +243,326 @@ create_default_pages() {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>服务管理中心 - $DOMAIN</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; }
-        h1 { color: #333; text-align: center; }
-        .service { background: #f8f9fa; padding: 20px; margin: 15px 0; border-radius: 8px; }
-        .btn { display: inline-block; background: #007acc; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 5px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 3rem 2rem;
+            text-align: center;
+            border-radius: 20px;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        header h1 {
+            color: white;
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1.2rem;
+        }
+        .service-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-top: 2rem;
+        }
+        .service-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .service-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
+        }
+        .service-card h3 {
+            color: #4a5568;
+            margin-bottom: 1rem;
+            font-size: 1.4rem;
+        }
+        .service-card p {
+            color: #718096;
+            margin-bottom: 1.5rem;
+        }
+        .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px 28px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .status {
+            font-size: 0.8rem;
+            color: #48bb78;
+            margin-top: 0.5rem;
+        }
+        footer {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            padding: 3rem 0;
+            margin-top: 3rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>服务管理中心</h1>
-        <div class="service">
-            <h3>🔄 订阅转换</h3>
-            <a href="/sub" class="btn">进入转换工具</a>
+        <header>
+            <h1>🚀 服务管理中心</h1>
+            <p>一站式网络服务管理平台</p>
+        </header>
+        
+        <div class="service-grid">
+            <div class="service-card">
+                <h3>🔄 订阅转换</h3>
+                <p>支持 VLESS、VMess、Trojan 等协议转换，集成 ACL4SSR 规则</p>
+                <a href="/sub" class="btn">进入转换工具</a>
+            </div>
+            
+            <div class="service-card">
+                <h3>🛡️ AdGuard Home</h3>
+                <p>DNS 广告过滤和网络保护，提供安全的网络环境</p>
+                <a href="http://$DOMAIN:3000" class="btn" target="_blank">管理面板</a>
+                <div class="status">端口: 3000</div>
+            </div>
+            
+            <div class="service-card">
+                <h3>⚡ S-UI 面板</h3>
+                <p>节点管理和流量监控，支持 Xray 核心</p>
+                <a href="http://$DOMAIN:2095" class="btn" target="_blank">管理面板</a>
+                <div class="status">端口: 2095</div>
+            </div>
         </div>
-        <div class="service">
-            <h3>🛡️ AdGuard Home</h3>
-            <a href="http://$DOMAIN:3000" class="btn" target="_blank">管理面板</a>
-        </div>
-        <div class="service">
-            <h3>⚡ S-UI 面板</h3>
-            <a href="http://$DOMAIN:2095" class="btn" target="_blank">管理面板</a>
-        </div>
+        
+        <footer>
+            <p>&copy; 2025 服务管理中心 | 域名: $DOMAIN</p>
+            <p>Reality 握手服务器: www.51kankan.vip</p>
+        </footer>
     </div>
 </body>
 </html>
 EOF
 
+    # 创建订阅转换页面
     cat > /var/www/html/sub.html << EOF
 <!DOCTYPE html>
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>订阅转换 - $DOMAIN</title>
+    <title>订阅转换工具 - $DOMAIN</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; }
-        textarea { width: 100%; height: 200px; padding: 10px; margin: 10px 0; }
-        .btn { background: #007acc; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        h1 {
+            color: #4a5568;
+            margin-bottom: 0.5rem;
+        }
+        .description {
+            color: #718096;
+            margin-bottom: 2rem;
+        }
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #4a5568;
+        }
+        textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        textarea {
+            height: 150px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .result {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: #f7fafc;
+            border-radius: 8px;
+            display: none;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: #667eea;
+            text-decoration: none;
+        }
+        .config-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <a href="/">← 返回首页</a>
-        <h1>订阅转换工具</h1>
-        <textarea id="url" placeholder="输入订阅链接"></textarea>
-        <select id="client">
-            <option value="clash">Clash</option>
-            <option value="surge">Surge</option>
-        </select>
-        <button class="btn" onclick="convert()">转换</button>
-        <div id="result" style="display:none; margin-top:20px;"></div>
+        <a href="/" class="back-link">← 返回首页</a>
+        
+        <header>
+            <h1>🔄 订阅转换工具</h1>
+            <p class="description">支持 VLESS、VMess、Trojan 等协议转换为 Clash 配置</p>
+        </header>
+
+        <div class="input-group">
+            <label for="subscriptionUrl">订阅链接：</label>
+            <textarea id="subscriptionUrl" placeholder="请输入订阅链接，每行一个链接..."></textarea>
+        </div>
+        
+        <div class="config-row">
+            <div class="input-group">
+                <label for="clientType">目标客户端：</label>
+                <select id="clientType">
+                    <option value="clash">Clash</option>
+                    <option value="surge">Surge</option>
+                    <option value="quantumult">Quantumult</option>
+                </select>
+            </div>
+            
+            <div class="input-group">
+                <label for="ruleConfig">规则配置：</label>
+                <select id="ruleConfig">
+                    <option value="https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Full.ini">ACL4SSR 全分组</option>
+                    <option value="https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_NoAuto.ini">ACL4SSR 无自动测速</option>
+                    <option value="https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini.ini">ACL4SSR 最小化</option>
+                </select>
+            </div>
+        </div>
+
+        <button class="btn" onclick="generateConfig()">生成配置</button>
+        <button class="btn" onclick="clearAll()">清空</button>
+
+        <div id="result" class="result">
+            <h3>生成结果：</h3>
+            <div id="configOutput"></div>
+            <button class="btn" onclick="copyResult()">复制链接</button>
+            <a id="downloadLink" class="btn">下载配置</a>
+        </div>
     </div>
+
     <script>
-        function convert() {
-            const url = document.getElementById('url').value;
-            const client = document.getElementById('client').value;
-            const result = '/sub?target=' + client + '&url=' + encodeURIComponent(url);
-            document.getElementById('result').innerHTML = '<a href="' + result + '">' + result + '</a>';
+        function generateConfig() {
+            const urls = document.getElementById('subscriptionUrl').value;
+            const client = document.getElementById('clientType').value;
+            const ruleset = document.getElementById('ruleConfig').value;
+            
+            if (!urls.trim()) {
+                alert('请输入订阅链接');
+                return;
+            }
+            
+            // 构建转换链接
+            let baseUrl = '/sub';
+            let params = new URLSearchParams({
+                target: client,
+                url: urls.split('\\n').filter(url => url.trim()).join('|')
+            });
+            
+            if (ruleset) params.append('config', ruleset);
+            
+            const finalUrl = baseUrl + '?' + params.toString();
+            const fullUrl = window.location.origin + finalUrl;
+            
+            // 显示结果
+            document.getElementById('configOutput').innerHTML = 
+                '<p>订阅链接：</p>' +
+                '<input type="text" value="' + fullUrl + '" style="width: 100%; padding: 8px; margin: 5px 0;" readonly>' +
+                '<p>或者直接访问：<a href="' + finalUrl + '" target="_blank">' + finalUrl + '</a></p>';
+            
+            document.getElementById('downloadLink').href = finalUrl;
+            document.getElementById('downloadLink').download = 'config.' + (client === 'clash' ? 'yaml' : 'conf');
             document.getElementById('result').style.display = 'block';
+        }
+        
+        function copyResult() {
+            const resultInput = document.querySelector('#configOutput input');
+            resultInput.select();
+            document.execCommand('copy');
+            alert('链接已复制到剪贴板');
+        }
+        
+        function clearAll() {
+            document.getElementById('subscriptionUrl').value = '';
+            document.getElementById('result').style.display = 'none';
         }
     </script>
 </body>
 </html>
 EOF
+
+    log "网页界面设置完成"
 }
 
 # 配置 Nginx
@@ -334,7 +611,11 @@ server {
 }
 EOF
 
-    nginx -t && systemctl restart nginx
+    # 启动 Nginx
+    systemctl start nginx
+    systemctl enable nginx
+    
+    nginx -t && systemctl reload nginx
     log "Nginx 配置完成"
 }
 

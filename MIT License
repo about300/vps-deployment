@@ -1,0 +1,8 @@
+
+## 第二步：在 VPS 上部署
+
+### 1. 一键部署命令
+
+```bash
+# 使用您的 GitHub 用户名替换下面的 URL
+bash <(curl -sL https://raw.githubusercontent.com/您的用户名/vps-deployment/main/deploy.sh)

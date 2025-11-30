@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>服务管理中心 - MY_DOMAIN</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 3rem 2rem;
+            text-align: center;
+            border-radius: 20px;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        header h1 {
+            color: white;
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1.2rem;
+        }
+        .service-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-top: 2rem;
+        }
+        .service-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .service-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
+        }
+        .service-card h3 {
+            color: #4a5568;
+            margin-bottom: 1rem;
+            font-size: 1.4rem;
+        }
+        .service-card p {
+            color: #718096;
+            margin-bottom: 1.5rem;
+        }
+        .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px 28px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .status {
+            font-size: 0.8rem;
+            color: #48bb78;
+            margin-top: 0.5rem;
+        }
+        footer {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            padding: 3rem 0;
+            margin-top: 3rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 服务管理中心</h1>
+            <p>一站式网络服务管理平台</p>
+        </header>
+        
+        <div class="service-grid">
+            <div class="service-card">
+                <h3>🔄 订阅转换</h3>
+                <p>支持 VLESS、VMess、Trojan 等协议转换，集成 ACL4SSR 规则</p>
+                <a href="/sub" class="btn">进入转换工具</a>
+            </div>
+            
+            <div class="service-card">
+                <h3>🛡️ AdGuard Home</h3>
+                <p>DNS 广告过滤和网络保护，提供安全的网络环境</p>
+                <a href="http://MY_DOMAIN:3000" class="btn" target="_blank">管理面板</a>
+                <div class="status">端口: 3000</div>
+            </div>
+            
+            <div class="service-card">
+                <h3>⚡ S-UI 面板</h3>
+                <p>节点管理和流量监控，支持 Xray 核心</p>
+                <a href="http://MY_DOMAIN:2095" class="btn" target="_blank">管理面板</a>
+                <div class="status">端口: 2095</div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>&copy; 2025 服务管理中心 | 域名: MY_DOMAIN</p>
+            <p>Reality 握手服务器: www.51kankan.vip</p>
+        </footer>
+    </div>
+</body>
+</html>

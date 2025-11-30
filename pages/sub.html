@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订阅转换工具 - MY_DOMAIN</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        h1 {
+            color: #4a5568;
+            margin-bottom: 0.5rem;
+        }
+        .description {
+            color: #718096;
+            margin-bottom: 2rem;
+        }
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #4a5568;
+        }
+        textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        textarea {
+            height: 150px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .result {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: #f7fafc;
+            border-radius: 8px;
+            display: none;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: #667eea;
+            text-decoration: none;
+        }
+        .config-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← 返回首页</a>
+        
+        <header>
+            <h1>🔄 订阅转换工具</h1>
+            <p class="description">支持 VLESS、VMess、Trojan 等协议转换为 Clash 配置</p>
+        </header>
+
+        <div class="input-group">
+            <label for="subscriptionUrl">订阅链接：</label>
+            <textarea id="subscriptionUrl" placeholder="请输入订阅链接，每行一个链接..."></textarea>
+        </div>
+        
+        <div class="config-row">
+            <div class="input-group">
+                <label for="clientType">目标客户端：</label>
+                <select id="clientType">
+                    <option value="clash">Clash</option>
+                    <option value="surge">Surge</option>
+                    <option value="quantumult">Quantumult</option>
+                </select>
+            </div>
+            
+            <div class="input-group">
+                <label for="ruleConfig">规则配置：</label>
+                <select id="ruleConfig">
+                    <option value="https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Full.ini">ACL4SSR 全分组</option>
+                    <option value="https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_NoAuto.ini">ACL4SSR 无自动测速</option>
+                    <option value="https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini.ini">ACL4SSR 最小化</option>
+                </select>
+            </div>
+        </div>
+
+        <button class="btn" onclick="generateConfig()">生成配置</button>
+        <button class="btn" onclick="clearAll()">清空</button>
+
+        <div id="result" class="result">
+            <h3>生成结果：</h3>
+            <div id="configOutput"></div>
+            <button class="btn" onclick="copyResult()">复制链接</button>
+            <a id="downloadLink" class="btn">下载配置</a>
+        </div>
+    </div>
+
+    <script>
+        function generateConfig() {
+            const urls = document.getElementById('subscriptionUrl').value;
+            const client = document.getElementById('clientType').value;
+            const ruleset = document.getElementById('ruleConfig').value;
+            
+            if (!urls.trim()) {
+                alert('请输入订阅链接');
+                return;
+            }
+            
+            // 构建转换链接
+            let baseUrl = '/sub';
+            let params = new URLSearchParams({
+                target: client,
+                url: urls.split('\n').filter(url => url.trim()).join('|')
+            });
+            
+            if (ruleset) params.append('config', ruleset);
+            
+            const finalUrl = baseUrl + '?' + params.toString();
+            const fullUrl = window.location.origin + finalUrl;
+            
+            // 显示结果
+            document.getElementById('configOutput').innerHTML = 
+                `<p>订阅链接：</p>
+                 <input type="text" value="${fullUrl}" style="width: 100%; padding: 8px; margin: 5px 0;" readonly>
+                 <p>或者直接访问：<a href="${finalUrl}" target="_blank">${finalUrl}</a></p>`;
+            
+            document.getElementById('downloadLink').href = finalUrl;
+            document.getElementById('downloadLink').download = 'config.' + (client === 'clash' ? 'yaml' : 'conf');
+            document.getElementById('result').style.display = 'block';
+        }
+        
+        function copyResult() {
+            const resultInput = document.querySelector('#configOutput input');
+            resultInput.select();
+            document.execCommand('copy');
+            alert('链接已复制到剪贴板');
+        }
+        
+        function clearAll() {
+            document.getElementById('subscriptionUrl').value = '';
+            document.getElementById('result').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

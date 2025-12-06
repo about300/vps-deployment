@@ -1,37 +1,24 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>订阅转换工具</title>
-<link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <title>VPS Dashboard</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-<div class="bg"></div>
-
-<div class="center">
-    <h1 class="title">云订阅转换</h1>
-
-    <div class="search-box">
-        <input id="raw" type="text" placeholder="输入节点订阅/VLESS/VMESS/Trojan/SSR">
+    <div class="container">
+        <h1>VPS Dashboard</h1>
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="搜索或输入规则 URL">
+            <button onclick="search()">搜索/跳转</button>
+        </div>
+        <div class="converter">
+            <h2>订阅转换</h2>
+            <input type="text" id="subInput" placeholder="输入 VLESS 链接">
+            <button onclick="convertSub()">转换为 Clash YAML</button>
+            <pre id="subOutput"></pre>
+        </div>
     </div>
-
-    <select id="rule" class="rule">
-        <option value="">默认配置</option>
-        <option value="https://raw.githubusercontent.com/about300/ACL4SSR/master/Clash/config/Online_Full_github.ini">ACL4SSR Online Full</option>
-        <option value="custom">自定义规则（填写下方）</option>
-    </select>
-
-    <input id="custom" class="custom" type="text" placeholder="自定义规则URL">
-
-    <div class="btn-box">
-        <button onclick="convert('clash')">生成 Clash</button>
-        <button onclick="convert('acl4ssr')">生成 ACL4SSR</button>
-    </div>
-
-    <div id="output" class="output"></div>
-</div>
-
-<script src="script.js"></script>
+    <script src="main.js"></script>
 </body>
 </html>

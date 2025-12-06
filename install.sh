@@ -1,93 +1,107 @@
 #!/bin/bash
+# ========================================
+# VPS Deployment Script
+# Features: S-UI + Subconverter + UFW firewall
+# Author: about300
+# ========================================
+
 set -e
 
-echo "========= VPS Deployment Script ========="
-
-# 1️⃣ 安装依赖
-echo "[*] Installing dependencies..."
+# --- 1. 安装依赖 ---
+echo "Installing dependencies..."
 apt update -y
-apt install -y wget curl tar ufw git
+apt install -y curl wget tar ufw
 
-# 2️⃣ 设置防火墙
-echo "[*] Configuring UFW..."
-ufw allow 22/tcp
-read -p "请输入面板端口（默认2095）: " PANEL_PORT
-PANEL_PORT=${PANEL_PORT:-2095}
-ufw allow $PANEL_PORT/tcp
-read -p "请输入订阅端口（默认2096）: " SUB_PORT
+# --- 2. 设置面板信息（交互式） ---
+read -p "Enter S-UI username: " SU_USER
+read -s -p "Enter S-UI password: " SU_PASS
+echo
+read -p "Enter S-UI panel port (default 2095): " SU_PORT
+SU_PORT=${SU_PORT:-2095}
+read -p "Enter S-UI panel path (default /app/): " SU_PATH
+SU_PATH=${SU_PATH:-/app/}
+read -p "Enter S-UI subscription port (default 2096): " SUB_PORT
 SUB_PORT=${SUB_PORT:-2096}
-ufw allow $SUB_PORT/tcp
-ufw enable
+read -p "Enter S-UI subscription path (default /sub/): " SUB_PATH
+SUB_PATH=${SUB_PATH:-/sub/}
 
-# 3️⃣ 安装 S-UI 官方面板
-echo "[*] Installing S-UI Panel..."
-cd /tmp
-SU_VERSION=$(curl -s https://api.github.com/repos/alireza0/s-ui/releases/latest | grep 'tag_name' | cut -d\" -f4)
-wget https://github.com/alireza0/s-ui/releases/download/${SU_VERSION}/s-ui-linux-amd64.tar.gz -O s-ui-linux-amd64.tar.gz
-tar -xzf s-ui-linux-amd64.tar.gz -C /opt
-cd /opt/s-ui
+# --- 3. 安装 S-UI ---
+echo "Downloading S-UI..."
+SU_VERSION=$(curl -s https://api.github.com/repos/alireza0/s-ui/releases/latest | grep tag_name | cut -d '"' -f 4)
+wget -O /tmp/s-ui-linux-amd64.tar.gz "https://github.com/alireza0/s-ui/releases/download/${SU_VERSION}/s-ui-linux-amd64.tar.gz"
 
-# 交互设置管理员账号
-read -p "是否修改管理员账号? [y/n]: " MODIFY_ADMIN
-if [[ "$MODIFY_ADMIN" == "y" ]]; then
-    read -p "用户名: " ADMIN_USER
-    read -p "密码: " ADMIN_PASS
-fi
+echo "Installing S-UI..."
+tar -xzf /tmp/s-ui-linux-amd64.tar.gz -C /opt/
+chmod +x /opt/s-ui/sui
 
-chmod +x sui
-./sui install
-./sui resetadmin --user "$ADMIN_USER" --pass "$ADMIN_PASS"
+# 配置面板
+/opt/s-ui/sui admin -username "$SU_USER" -password "$SU_PASS"
+/opt/s-ui/sui setting -port "$SU_PORT" -path "$SU_PATH" -subPort "$SUB_PORT" -subPath "$SUB_PATH"
 
-echo "[*] S-UI installed! Panel port: $PANEL_PORT"
-
-# 4️⃣ 部署 Subconverter
-echo "[*] Deploying Subconverter..."
-cd /opt
-mkdir -p subconverter
-cp /path/to/github/subconverter/* /opt/subconverter/
-chmod +x /opt/subconverter/subconverter
-
-# 设置 token
-read -p "请输入 Subconverter token: " SUB_TOKEN
-sed -i "s/\"token\": \"\"/\"token\": \"$SUB_TOKEN\"/" /opt/subconverter/config.json
-
-# 启动 Subconverter
-cat >/etc/systemd/system/subconverter.service <<EOL
-[Unit]
-Description=Subconverter Service
+# 设置 systemd 自启
+echo "[Unit]
+Description=S-UI Panel
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/subconverter/subconverter -config /opt/subconverter/config.json
+WorkingDirectory=/opt/s-ui
+ExecStart=/opt/s-ui/sui
 Restart=always
+RestartSec=3s
 
 [Install]
-WantedBy=multi-user.target
-EOL
+WantedBy=multi-user.target" > /etc/systemd/system/s-ui.service
 
 systemctl daemon-reload
-systemctl enable subconverter
-systemctl start subconverter
+systemctl enable s-ui
+systemctl start s-ui
 
-# 5️⃣ 部署 Web 前端
-echo "[*] Deploying Web frontend..."
-mkdir -p /opt/web
-# 可以放置简单搜索 + 订阅转换前端 HTML/JS 文件
-# 例如：index.html、search.js
-# 用户可以自定义 HTML 文件内容
-echo "<html><body><h2>Welcome to VPS Web</h2></body></html>" > /opt/web/index.html
+echo "S-UI installed! Panel: http://<YOUR_DOMAIN>:$SU_PORT$SU_PATH"
 
-# 使用 Caddy 作为静态 web server
-apt install -y caddy
-cat >/etc/caddy/Caddyfile <<EOL
-:80 {
-    root * /opt/web
-    file_server
-}
-EOL
-systemctl restart caddy
+# --- 4. 部署 Subconverter ---
+echo "Deploying Subconverter..."
+read -p "Enter Subconverter token: " SUB_TOKEN
 
-echo "========= Deployment Finished ========="
-echo "S-UI URL: http://<your_server_ip>:$PANEL_PORT/app/"
-echo "Subconverter URL: http://<your_server_ip>:$SUB_PORT/sub?token=$SUB_TOKEN"
+# 假设 subconvert 文件夹已经在 GitHub 仓库中
+mkdir -p /opt/subconvert
+cp -r ./subconvert/* /opt/subconvert/
+chmod +x /opt/subconvert/subconvert
+
+# 更新 config.json token
+sed -i "s/YOUR_TOKEN_HERE/$SUB_TOKEN/" /opt/subconvert/config.json
+
+# 设置 systemd 自启
+echo "[Unit]
+Description=Subconverter
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/subconvert
+ExecStart=/opt/subconvert/subconvert
+Restart=always
+RestartSec=3s
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/subconvert.service
+
+systemctl daemon-reload
+systemctl enable subconvert
+systemctl start subconvert
+
+echo "Subconverter deployed! Listening port defined in config.json"
+
+# --- 5. 配置防火墙 ---
+echo "Configuring UFW firewall..."
+ufw allow 22
+ufw allow "$SU_PORT"
+ufw allow "$SUB_PORT"
+# 这里可以让用户输入 VLESS 端口
+read -p "Enter your VLESS+Reality port: " VLESS_PORT
+ufw allow "$VLESS_PORT"
+ufw --force enable
+
+echo "Firewall configured, only 22, S-UI, Subconverter and VLESS ports are open."
+
+echo "Installation complete!"

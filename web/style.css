@@ -1,87 +1,46 @@
-body,html{
-    margin:0;
-    padding:0;
-    overflow:hidden;
-    font-family:"Segoe UI",sans-serif;
+body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(to right, #1e3c72, #2a5298);
+    color: #fff;
+    text-align: center;
+    padding: 50px;
 }
 
-.bg{
-    background-image:url('https://bing.img.run/1920x1080.php');
-    background-size:cover;
-    background-position:center;
-    filter:blur(10px);
-    width:100vw;
-    height:100vh;
-    position:fixed;
-    z-index:-1;
+.container {
+    background: rgba(0,0,0,0.5);
+    padding: 30px;
+    border-radius: 12px;
+    max-width: 700px;
+    margin: auto;
 }
 
-.center{
-    text-align:center;
-    margin-top:14vh;
-    color:white;
+h1 {
+    font-size: 2.5em;
+    margin-bottom: 20px;
 }
 
-.title{
-    font-size:38px;
-    margin-bottom:28px;
-    font-weight:600;
+.search-box input, .converter input {
+    width: 60%;
+    padding: 10px;
+    border-radius: 6px;
+    border: none;
+    margin-bottom: 10px;
 }
 
-.search-box{
-    width:60%;
-    max-width:600px;
-    margin:0 auto 15px auto;
-    background:rgba(255,255,255,0.18);
-    padding:15px;
-    border-radius:40px;
-    backdrop-filter:blur(6px);
+button {
+    padding: 10px 20px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
 }
 
-input{
-    border:none;
-    outline:none;
-    background:transparent;
-    color:white;
-    width:100%;
-    font-size:18px;
-}
-
-input::placeholder{
-    color:rgba(255,255,255,0.7);
-}
-
-.rule,.custom{
-    width:50%;
-    max-width:500px;
-    padding:10px;
-    margin-top:10px;
-    border-radius:8px;
-    border:none;
-    outline:none;
-    background:rgba(255,255,255,0.2);
-    color:white;
-    backdrop-filter:blur(5px);
-}
-
-.custom{
-    display:none;
-}
-.btn-box{
-    margin-top:20px;
-}
-button{
-    padding:10px 22px;
-    margin:5px;
-    font-size:16px;
-    border:none;
-    border-radius:32px;
-    cursor:pointer;
-    color:black;
-    background:white;
-}
-.output{
-    margin-top:20px;
-    font-size:16px;
-    word-break:break-all;
+pre {
+    text-align: left;
+    background: rgba(255,255,255,0.1);
+    padding: 10px;
+    border-radius: 6px;
+    overflow-x: auto;
 }

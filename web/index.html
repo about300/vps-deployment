@@ -1,22 +1,66 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>Subconverter Frontend</title>
-<script>
-async function convert() {
-    const url = document.getElementById("sub_url").value;
-    const token = "vless-secure-token-123"; // 和 config.json 一致
-    const res = await fetch(`http://YOUR_SERVER_IP:8081/sub?target=clash&url=${encodeURIComponent(url)}&token=${token}`);
-    const data = await res.text();
-    document.getElementById("output").textContent = data;
-}
-</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VPS Tools Web</title>
+<style>
+    body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 0; }
+    header { background: #0078d4; color: white; padding: 1rem; text-align: center; }
+    main { padding: 2rem; max-width: 800px; margin: auto; }
+    input[type=text], input[type=url] { width: 100%; padding: 0.5rem; margin: 0.5rem 0; }
+    button { padding: 0.5rem 1rem; margin-top: 0.5rem; background: #0078d4; color: white; border: none; cursor: pointer; }
+    button:hover { background: #005a9e; }
+    .result { margin-top: 1rem; padding: 1rem; background: white; border-radius: 5px; }
+</style>
 </head>
 <body>
-<h1>VLESS Subconverter</h1>
-<input type="text" id="sub_url" placeholder="输入订阅链接"/>
-<button onclick="convert()">转换</button>
-<pre id="output"></pre>
+<header>
+    <h1>VPS Tools Web</h1>
+</header>
+<main>
+    <!-- 搜索功能 -->
+    <section>
+        <h2>搜索内容</h2>
+        <input type="text" id="searchQuery" placeholder="输入搜索内容">
+        <button onclick="doSearch()">搜索</button>
+    </section>
+
+    <!-- 订阅转换 -->
+    <section>
+        <h2>订阅转换 (Clash/YAML)</h2>
+        <input type="url" id="subUrl" placeholder="输入原始订阅链接">
+        <button onclick="convertSub()">转换订阅</button>
+        <div class="result" id="subResult"></div>
+    </section>
+</main>
+
+<script>
+function doSearch() {
+    const query = document.getElementById("searchQuery").value.trim();
+    if (!query) { alert("请输入搜索内容"); return; }
+    // 直接跳转到 Bing 搜索
+    window.open(`https://www.bing.com/search?q=${encodeURIComponent(query)}`, "_blank");
+}
+
+async function convertSub() {
+    const subUrl = document.getElementById("subUrl").value.trim();
+    if (!subUrl) { alert("请输入订阅链接"); return; }
+
+    const token = prompt("请输入 Subconverter token (与 install.sh 设置的相同)"); 
+    if (!token) { alert("必须输入 token"); return; }
+
+    const apiUrl = `http://localhost:8081/api/v1/convert?token=${encodeURIComponent(token)}&url=${encodeURIComponent(subUrl)}`;
+    
+    try {
+        const resp = await fetch(apiUrl);
+        if (!resp.ok) throw new Error("请求失败: " + resp.status);
+        const text = await resp.text();
+        document.getElementById("subResult").textContent = text;
+    } catch (e) {
+        document.getElementById("subResult").textContent = "转换失败: " + e.message;
+    }
+}
+</script>
 </body>
 </html>

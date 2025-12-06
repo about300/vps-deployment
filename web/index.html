@@ -1,24 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>VPS Dashboard</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<title>Subconverter Frontend</title>
+<script>
+async function convert() {
+    const url = document.getElementById("sub_url").value;
+    const token = "vless-secure-token-123"; // 和 config.json 一致
+    const res = await fetch(`http://YOUR_SERVER_IP:8081/sub?target=clash&url=${encodeURIComponent(url)}&token=${token}`);
+    const data = await res.text();
+    document.getElementById("output").textContent = data;
+}
+</script>
 </head>
 <body>
-    <div class="container">
-        <h1>VPS Dashboard</h1>
-        <div class="search-box">
-            <input type="text" id="searchInput" placeholder="搜索或输入规则 URL">
-            <button onclick="search()">搜索/跳转</button>
-        </div>
-        <div class="converter">
-            <h2>订阅转换</h2>
-            <input type="text" id="subInput" placeholder="输入 VLESS 链接">
-            <button onclick="convertSub()">转换为 Clash YAML</button>
-            <pre id="subOutput"></pre>
-        </div>
-    </div>
-    <script src="main.js"></script>
+<h1>VLESS Subconverter</h1>
+<input type="text" id="sub_url" placeholder="输入订阅链接"/>
+<button onclick="convert()">转换</button>
+<pre id="output"></pre>
 </body>
 </html>

@@ -1,14 +1,8 @@
 {
-  "listen": "0.0.0.0:8081",
-  "token": "vless-secure-token-123",
-  "log_level": "info",
-  "plugins": [],
-  "converters": {
-    "clash": {
-      "type": "clash",
-      "mode": "rule",
-      "dns": ["1.1.1.1","8.8.8.8"],
-      "enhanced_mode": "fake-ip"
-    }
-  }
+  "token": "",
+  "loglevel": "info",
+  "listen": "0.0.0.0",
+  "port": 8081,
+  "db_path": "subconverter.db",
+  "templates": []
 }

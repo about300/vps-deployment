@@ -1,15 +1,14 @@
 {
-    "listen": "0.0.0.0:8081",
-    "token": "your-secret-token",
-    "log_level": "info",
-    "plugins": [],
-    "default_proxy": "socks5://127.0.0.1:1080",
-    "converters": {
-        "clash": {
-            "type": "clash",
-            "mode": "rule",
-            "dns": ["1.1.1.1", "8.8.8.8"],
-            "enhanced_mode": "fake-ip"
-        }
+  "listen": "0.0.0.0:8081",
+  "token": "vless-secure-token-123",
+  "log_level": "info",
+  "plugins": [],
+  "converters": {
+    "clash": {
+      "type": "clash",
+      "mode": "rule",
+      "dns": ["1.1.1.1","8.8.8.8"],
+      "enhanced_mode": "fake-ip"
     }
+  }
 }

@@ -1,85 +1,89 @@
 #!/bin/bash
-set -e
+echo "===== VPS 自动部署 (Caddy + S-UI + Subconverter + Web前端) ====="
 
-echo "========== VLESS+Reality+s-ui 自动安装 =========="
+# ---- 输入域名 ----
+read -p "请输入你的主站域名(例如 example.com): " DOMAIN
+read -p "请输入用于面板的子域名(例如 panel.example.com): " PANEL_DOMAIN
 
-read -p "请输入你的域名 (默认 myhome.mycloudshare.org): " DOMAIN
-DOMAIN=${DOMAIN:-myhome.mycloudshare.org}
+echo -e "\n使用域名: $DOMAIN"
+echo -e "面板域名: $PANEL_DOMAIN\n"
 
-read -p "请输入伪装域名SNI (默认 www.bing.com): " SNI
-SNI=${SNI:-www.bing.com}
+echo "准备安装..."
 
-echo "开始安装必要环境..."
-apt update -y && apt install -y curl wget unzip socat cron nginx
+# ---- 安装依赖 ----
+apt update -y
+apt install -y curl wget unzip socat
 
-echo "安装 s-ui 面板..."
-bash <(curl -fsSL https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
-
-echo "停止 nginx 使用 Caddy 接管 443"
-systemctl stop nginx
-systemctl disable nginx
-
+# ---- 安装 Caddy ----
 echo "安装 Caddy..."
 apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/deb/debian/pubkey.gpg' | gpg --dearmor \
-| tee /usr/share/keyrings/caddy-stable-archive-keyring.gpg >/dev/null
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/deb/debian/debian.deb.txt' \
-| tee /etc/apt/sources.list.d/caddy-stable.list
-apt update -y && apt install -y caddy
+curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/debian/raw/gpg.key" | sudo tee /etc/apt/trusted.gpg.d/caddy-stable.asc
+curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/debian/raw/caddy-stable.list" | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+apt update -y
+apt install -y caddy
 
-echo "生成 Reality 公私钥..."
-mkdir -p /opt/reality
-PRIV=$(openssl rand -hex 32)
-PUB=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32)
-echo "$PRIV" > /opt/reality/private.key
-echo "$PUB" > /opt/reality/public.key
+# ---- 安装 S-UI ----
+echo "安装 S-UI 面板..."
+bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-echo "部署 Caddy 配置..."
+# ---- 安装 subconverter ----
+echo "安装 subconverter 转换服务..."
+mkdir -p /opt/sub
+cd /opt/sub
+wget https://github.com/tindy2013/subconverter/releases/latest/download/subconverter-linux64.zip
+unzip subconverter-linux64.zip
+chmod +x subconverter
+
+# ---- 创建 systemd ----
+cat >/etc/systemd/system/subconverter.service <<EOF
+[Unit]
+Description=Subconverter Service
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/sub
+ExecStart=/opt/sub/subconverter
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable subconverter
+systemctl restart subconverter
+
+# ---- 部署 Web 前端 ----
+mkdir -p /var/www/site
+cd /var/www/site
+
+# 复制来自仓库
+curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/web/index.html -o index.html
+curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/web/style.css -o style.css
+curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/web/script.js -o script.js
+
+# ---- Caddyfile ----
 cat >/etc/caddy/Caddyfile <<EOF
 {
-    servers {
-        protocol {
-            experimental_http3
-        }
-    }
+    email admin@$DOMAIN
 }
-$DOMAIN:443 {
-    encode gzip
 
-    @main path /
-    handle @main {
-        root * /var/www/site
-        file_server
-    }
+# 主站 (网页)
+$DOMAIN {
+    root * /var/www/site
+    file_server
+    reverse_proxy /sub* localhost:25500
+}
 
-    @sub path /sub
-    handle @sub {
-        reverse_proxy 127.0.0.1:18080
-    }
-
-    reverse_proxy 127.0.0.1:4433
+# S-UI 面板
+$PANEL_DOMAIN {
+    reverse_proxy localhost:81
 }
 EOF
 
 systemctl restart caddy
 
-echo "部署订阅转换 subconverter..."
-mkdir -p /opt/sub && cd /opt/sub
-wget -O sub.zip https://github.com/tindy2013/subconverter/archive/master.zip
-unzip -o sub.zip
-mv subconverter-master subconverter
-chmod +x subconverter/subconverter
-nohup ./subconverter/subconverter &
-
-echo "部署Bing风格Web前端..."
-mkdir -p /var/www/site
-cd /var/www/site
-curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/web/index.html -o index.html
-curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/web/script.js -o script.js
-curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/web/style.css -o style.css
-
-echo "========== 安装完成 =========="
-echo "面板访问： https://$DOMAIN"
-echo "订阅转换： https://$DOMAIN/sub?target=clash&url=你的节点"
-echo "Reality 公钥： $PUB"
-echo "Reality 私钥： $PRIV"
+echo -e "\n=== 安装完成 ==="
+echo "访问主页: https://$DOMAIN"
+echo "访问面板: https://$PANEL_DOMAIN"
+echo "注意：Reality 设置在S-UI面板内手动配置！！"

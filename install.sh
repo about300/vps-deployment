@@ -1,107 +1,79 @@
 #!/bin/bash
+
 # ========================================
-# VPS Deployment Script
-# Features: S-UI + Subconverter + UFW firewall
-# Author: about300
+# VPS 一键部署脚本 - Ubuntu 24
+# 支持：
+# - VLESS+Reality TLS-through 共用 443
+# - Subconverter 后端
+# - Web 前端 (bing风格 + 订阅转换入口)
 # ========================================
 
-set -e
+# ==== 用户交互设置 ====
+read -p "请输入你的域名 (例如 myhome.mycloudshare.org): " DOMAIN
+read -p "请输入 Web 面板路径 (默认 /sui): " WEB_PATH
+WEB_PATH=${WEB_PATH:-/sui}
+read -p "请输入 Subconverter 路径 (默认 /sub): " SUB_PATH
+SUB_PATH=${SUB_PATH:-/sub}
 
-# --- 1. 安装依赖 ---
-echo "Installing dependencies..."
+# ==== 安装基础依赖 ====
 apt update -y
-apt install -y curl wget tar ufw
+apt install -y curl git socat wget unzip
 
-# --- 2. 设置面板信息（交互式） ---
-read -p "Enter S-UI username: " SU_USER
-read -s -p "Enter S-UI password: " SU_PASS
-echo
-read -p "Enter S-UI panel port (default 2095): " SU_PORT
-SU_PORT=${SU_PORT:-2095}
-read -p "Enter S-UI panel path (default /app/): " SU_PATH
-SU_PATH=${SU_PATH:-/app/}
-read -p "Enter S-UI subscription port (default 2096): " SUB_PORT
-SUB_PORT=${SUB_PORT:-2096}
-read -p "Enter S-UI subscription path (default /sub/): " SUB_PATH
-SUB_PATH=${SUB_PATH:-/sub/}
+# ==== 安装 Caddy ====
+if ! command -v caddy &>/dev/null; then
+    echo "安装 Caddy..."
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+    apt update -y
+    apt install -y caddy
+fi
 
-# --- 3. 安装 S-UI ---
-echo "Downloading S-UI..."
-SU_VERSION=$(curl -s https://api.github.com/repos/alireza0/s-ui/releases/latest | grep tag_name | cut -d '"' -f 4)
-wget -O /tmp/s-ui-linux-amd64.tar.gz "https://github.com/alireza0/s-ui/releases/download/${SU_VERSION}/s-ui-linux-amd64.tar.gz"
+# ==== 设置目录 ====
+mkdir -p /opt/web_frontend
+mkdir -p /opt/subconverter
 
-echo "Installing S-UI..."
-tar -xzf /tmp/s-ui-linux-amd64.tar.gz -C /opt/
-chmod +x /opt/s-ui/sui
+# ==== 拉取 Web 前端 ====
+echo "拉取 Web 前端..."
+git clone https://github.com/about300/vps-deployment.git /opt/web_frontend
 
-# 配置面板
-/opt/s-ui/sui admin -username "$SU_USER" -password "$SU_PASS"
-/opt/s-ui/sui setting -port "$SU_PORT" -path "$SU_PATH" -subPort "$SUB_PORT" -subPath "$SUB_PATH"
+# ==== 拉取 Subconverter ====
+echo "拉取 Subconverter..."
+git clone https://github.com/about300/vps-deployment.git /opt/subconverter
 
-# 设置 systemd 自启
-echo "[Unit]
-Description=S-UI Panel
-After=network.target
+# ==== 生成 Caddyfile ====
+echo "配置 Caddyfile..."
+cat > /etc/caddy/Caddyfile <<EOF
+$DOMAIN {
+    reverse_proxy $WEB_PATH/* {
+        to unix//opt/web_frontend/server.sock
+    }
+    reverse_proxy $SUB_PATH/* {
+        to unix//opt/subconverter/subconverter.sock
+    }
+    reverse_proxy /vless_reality/* {
+        to 127.0.0.1:443 # VLESS+Reality TLS-through
+    }
+}
+EOF
 
-[Service]
-Type=simple
-WorkingDirectory=/opt/s-ui
-ExecStart=/opt/s-ui/sui
-Restart=always
-RestartSec=3s
+# ==== 启动 Subconverter ====
+echo "启动 Subconverter..."
+cd /opt/subconverter
+# 假设你的 Subconverter 提供可执行脚本 converter.py
+nohup python3 converter.py &>/dev/null &
 
-[Install]
-WantedBy=multi-user.target" > /etc/systemd/system/s-ui.service
+# ==== 启动 Web 前端 ====
+echo "启动 Web 前端..."
+cd /opt/web_frontend
+# 假设前端提供 server.py
+nohup python3 server.py &>/dev/null &
 
-systemctl daemon-reload
-systemctl enable s-ui
-systemctl start s-ui
+# ==== 重载 Caddy ====
+echo "重载 Caddy 服务..."
+systemctl enable caddy
+systemctl restart caddy
 
-echo "S-UI installed! Panel: http://<YOUR_DOMAIN>:$SU_PORT$SU_PATH"
-
-# --- 4. 部署 Subconverter ---
-echo "Deploying Subconverter..."
-read -p "Enter Subconverter token: " SUB_TOKEN
-
-# 假设 subconvert 文件夹已经在 GitHub 仓库中
-mkdir -p /opt/subconvert
-cp -r ./subconvert/* /opt/subconvert/
-chmod +x /opt/subconvert/subconvert
-
-# 更新 config.json token
-sed -i "s/YOUR_TOKEN_HERE/$SUB_TOKEN/" /opt/subconvert/config.json
-
-# 设置 systemd 自启
-echo "[Unit]
-Description=Subconverter
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/subconvert
-ExecStart=/opt/subconvert/subconvert
-Restart=always
-RestartSec=3s
-
-[Install]
-WantedBy=multi-user.target" > /etc/systemd/system/subconvert.service
-
-systemctl daemon-reload
-systemctl enable subconvert
-systemctl start subconvert
-
-echo "Subconverter deployed! Listening port defined in config.json"
-
-# --- 5. 配置防火墙 ---
-echo "Configuring UFW firewall..."
-ufw allow 22
-ufw allow "$SU_PORT"
-ufw allow "$SUB_PORT"
-# 这里可以让用户输入 VLESS 端口
-read -p "Enter your VLESS+Reality port: " VLESS_PORT
-ufw allow "$VLESS_PORT"
-ufw --force enable
-
-echo "Firewall configured, only 22, S-UI, Subconverter and VLESS ports are open."
-
-echo "Installation complete!"
+echo "部署完成！"
+echo "访问 Web 前端: https://$DOMAIN$WEB_PATH"
+echo "访问 Subconverter: https://$DOMAIN$SUB_PATH"
+echo "VLESS+Reality TLS-through 保持在原端口配置"

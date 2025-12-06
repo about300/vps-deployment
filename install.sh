@@ -1,89 +1,105 @@
 #!/bin/bash
+
 set -e
 
-# ==================================================
-# VPS Deployment Script with interactive token
-# ==================================================
+echo "=== VPS 一键部署脚本 ==="
 
-# 1️⃣ 安装依赖
-apt update -y
-apt install -y wget curl tar ufw
-
-# 2️⃣ 配置防火墙（保留 22 端口）
-ufw allow 22
-ufw allow 8081/tcp   # Subconverter 后端端口
-ufw --force enable
-
-# 3️⃣ 创建目录
-DEPLOY_DIR="/opt/vps-deployment"
-SUB_DIR="$DEPLOY_DIR/subconvert"
-WEB_DIR="$DEPLOY_DIR/web"
-
-mkdir -p "$SUB_DIR"
-mkdir -p "$WEB_DIR"
-
-# 4️⃣ 复制仓库文件到部署目录
-# 假设你已经在仓库中有 subconvert 和 web 文件夹
-cp -r subconvert/* "$SUB_DIR/"
-cp -r web/* "$WEB_DIR/"
-
-# 5️⃣ 授权 Subconverter 可执行
-chmod +x "$SUB_DIR/subconverter"
-
-# 6️⃣ 交互设置 token
-read -p "请输入 Subconverter token（用于 API 验证）: " SC_TOKEN
-
-# 更新 config.json 中的 token
-CONFIG_FILE="$SUB_DIR/config.json"
-if [ -f "$CONFIG_FILE" ]; then
-    # 使用 jq 更新 token
-    if command -v jq >/dev/null 2>&1; then
-        jq --arg t "$SC_TOKEN" '.token = $t' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
-    else
-        # 如果没有 jq，使用简单 sed
-        sed -i "s/\"token\": \".*\"/\"token\": \"$SC_TOKEN\"/" "$CONFIG_FILE"
-    fi
-else
-    # 如果 config.json 不存在，则生成一个默认模板
-    cat > "$CONFIG_FILE" <<EOL
-{
-  "token": "$SC_TOKEN",
-  "port": 8081,
-  "host": "0.0.0.0"
-}
-EOL
+# 检查 root
+if [ "$EUID" -ne 0 ]; then
+  echo "请使用 root 执行此脚本"
+  exit 1
 fi
 
-# 7️⃣ 创建 systemd 服务
-SERVICE_FILE="/etc/systemd/system/subconvert.service"
+# -------------------------------
+# 系统更新与依赖
+# -------------------------------
+echo "更新系统..."
+apt update -y && apt upgrade -y
+apt install -y wget curl tar unzip ufw git jq
 
-cat > "$SERVICE_FILE" <<EOL
+# -------------------------------
+# 防火墙
+# -------------------------------
+echo "配置防火墙..."
+ufw allow 22/tcp
+
+read -p "请输入 S-UI 面板端口 (默认 2095): " PANEL_PORT
+PANEL_PORT=${PANEL_PORT:-2095}
+ufw allow $PANEL_PORT/tcp
+
+read -p "请输入 Subconverter API 端口 (默认 8081): " SUB_PORT
+SUB_PORT=${SUB_PORT:-8081}
+ufw allow $SUB_PORT/tcp
+
+ufw --force enable
+
+# -------------------------------
+# 安装 S-UI
+# -------------------------------
+echo "安装 S-UI 面板..."
+SUI_VERSION="v1.3.7"
+wget -O /tmp/s-ui-linux-amd64.tar.gz "https://github.com/alireza0/s-ui/releases/download/$SUI_VERSION/s-ui-linux-amd64.tar.gz"
+mkdir -p /opt/s-ui
+tar zxvf /tmp/s-ui-linux-amd64.tar.gz -C /opt/s-ui
+
+cd /opt/s-ui
+
+echo "配置 S-UI 面板..."
+read -p "是否修改管理员账号? [y/n]: " MODIFY_ADMIN
+if [[ "$MODIFY_ADMIN" == "y" ]]; then
+    read -p "用户名: " SUI_USER
+    read -p "密码: " SUI_PASS
+    ./s-ui install
+    ./s-ui resetadmin --user "$SUI_USER" --pass "$SUI_PASS"
+else
+    ./s-ui install
+fi
+
+# -------------------------------
+# 安装 Subconverter (MetaCubeX)
+# -------------------------------
+echo "安装 Subconverter..."
+mkdir -p /opt/subconvert
+cp ./subconvert/subconverter /opt/subconvert/
+cp ./subconvert/config.json /opt/subconvert/
+chmod +x /opt/subconvert/subconverter
+
+read -p "请输入 Subconverter token: " SUB_TOKEN
+jq --arg token "$SUB_TOKEN" '.token=$token' /opt/subconvert/config.json > /opt/subconvert/config_tmp.json
+mv /opt/subconvert/config_tmp.json /opt/subconvert/config.json
+
+# 创建 systemd 服务
+cat >/etc/systemd/system/subconvert.service <<EOF
 [Unit]
-Description=Subconverter VLESS Backend
+Description=Subconverter Service
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=$SUB_DIR/subconverter -c $SUB_DIR/config.json
-Restart=always
+ExecStart=/opt/subconvert/subconverter -config /opt/subconvert/config.json -port $SUB_PORT
+Restart=on-failure
 User=root
-WorkingDirectory=$SUB_DIR
 
 [Install]
 WantedBy=multi-user.target
-EOL
+EOF
 
-# 8️⃣ 启动服务
 systemctl daemon-reload
 systemctl enable subconvert
 systemctl start subconvert
 
-# 9️⃣ 输出信息
-echo "============================================"
-echo "Subconverter (VLESS) 已安装并启动"
-echo "监听端口: 8081"
-echo "配置目录: $SUB_DIR"
-echo "使用 token: $SC_TOKEN"
-echo "前端 Web 目录: $WEB_DIR"
-echo "访问 Web 前端请使用你的 VPS IP 或域名指向 $WEB_DIR"
-echo "============================================"
+# -------------------------------
+# 部署 Web 前端
+# -------------------------------
+echo "部署 Web 前端..."
+mkdir -p /var/www/vps-web
+cp -r ./web/* /var/www/vps-web/
+echo "Web 前端部署完成: http://<VPS_IP>:$PANEL_PORT/web/"
+
+# -------------------------------
+# 完成提示
+# -------------------------------
+echo "=== 部署完成 ==="
+echo "S-UI 面板: http://<VPS_IP>:$PANEL_PORT/app/"
+echo "Subconverter API: http://<VPS_IP>:$SUB_PORT/api/v1/"
+echo "Web 前端: http://<VPS_IP>:$PANEL_PORT/web/"

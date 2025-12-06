@@ -1,105 +1,93 @@
 #!/bin/bash
-
 set -e
 
-echo "=== VPS 一键部署脚本 ==="
+echo "========= VPS Deployment Script ========="
 
-# 检查 root
-if [ "$EUID" -ne 0 ]; then
-  echo "请使用 root 执行此脚本"
-  exit 1
-fi
+# 1️⃣ 安装依赖
+echo "[*] Installing dependencies..."
+apt update -y
+apt install -y wget curl tar ufw git
 
-# -------------------------------
-# 系统更新与依赖
-# -------------------------------
-echo "更新系统..."
-apt update -y && apt upgrade -y
-apt install -y wget curl tar unzip ufw git jq
-
-# -------------------------------
-# 防火墙
-# -------------------------------
-echo "配置防火墙..."
+# 2️⃣ 设置防火墙
+echo "[*] Configuring UFW..."
 ufw allow 22/tcp
-
-read -p "请输入 S-UI 面板端口 (默认 2095): " PANEL_PORT
+read -p "请输入面板端口（默认2095）: " PANEL_PORT
 PANEL_PORT=${PANEL_PORT:-2095}
 ufw allow $PANEL_PORT/tcp
-
-read -p "请输入 Subconverter API 端口 (默认 8081): " SUB_PORT
-SUB_PORT=${SUB_PORT:-8081}
+read -p "请输入订阅端口（默认2096）: " SUB_PORT
+SUB_PORT=${SUB_PORT:-2096}
 ufw allow $SUB_PORT/tcp
+ufw enable
 
-ufw --force enable
-
-# -------------------------------
-# 安装 S-UI
-# -------------------------------
-echo "安装 S-UI 面板..."
-SUI_VERSION="v1.3.7"
-wget -O /tmp/s-ui-linux-amd64.tar.gz "https://github.com/alireza0/s-ui/releases/download/$SUI_VERSION/s-ui-linux-amd64.tar.gz"
-mkdir -p /opt/s-ui
-tar zxvf /tmp/s-ui-linux-amd64.tar.gz -C /opt/s-ui
-
+# 3️⃣ 安装 S-UI 官方面板
+echo "[*] Installing S-UI Panel..."
+cd /tmp
+SU_VERSION=$(curl -s https://api.github.com/repos/alireza0/s-ui/releases/latest | grep 'tag_name' | cut -d\" -f4)
+wget https://github.com/alireza0/s-ui/releases/download/${SU_VERSION}/s-ui-linux-amd64.tar.gz -O s-ui-linux-amd64.tar.gz
+tar -xzf s-ui-linux-amd64.tar.gz -C /opt
 cd /opt/s-ui
 
-echo "配置 S-UI 面板..."
+# 交互设置管理员账号
 read -p "是否修改管理员账号? [y/n]: " MODIFY_ADMIN
 if [[ "$MODIFY_ADMIN" == "y" ]]; then
-    read -p "用户名: " SUI_USER
-    read -p "密码: " SUI_PASS
-    ./s-ui install
-    ./s-ui resetadmin --user "$SUI_USER" --pass "$SUI_PASS"
-else
-    ./s-ui install
+    read -p "用户名: " ADMIN_USER
+    read -p "密码: " ADMIN_PASS
 fi
 
-# -------------------------------
-# 安装 Subconverter (MetaCubeX)
-# -------------------------------
-echo "安装 Subconverter..."
-mkdir -p /opt/subconvert
-cp ./subconvert/subconverter /opt/subconvert/
-cp ./subconvert/config.json /opt/subconvert/
-chmod +x /opt/subconvert/subconverter
+chmod +x sui
+./sui install
+./sui resetadmin --user "$ADMIN_USER" --pass "$ADMIN_PASS"
 
+echo "[*] S-UI installed! Panel port: $PANEL_PORT"
+
+# 4️⃣ 部署 Subconverter
+echo "[*] Deploying Subconverter..."
+cd /opt
+mkdir -p subconverter
+cp /path/to/github/subconverter/* /opt/subconverter/
+chmod +x /opt/subconverter/subconverter
+
+# 设置 token
 read -p "请输入 Subconverter token: " SUB_TOKEN
-jq --arg token "$SUB_TOKEN" '.token=$token' /opt/subconvert/config.json > /opt/subconvert/config_tmp.json
-mv /opt/subconvert/config_tmp.json /opt/subconvert/config.json
+sed -i "s/\"token\": \"\"/\"token\": \"$SUB_TOKEN\"/" /opt/subconverter/config.json
 
-# 创建 systemd 服务
-cat >/etc/systemd/system/subconvert.service <<EOF
+# 启动 Subconverter
+cat >/etc/systemd/system/subconverter.service <<EOL
 [Unit]
 Description=Subconverter Service
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/subconvert/subconverter -config /opt/subconvert/config.json -port $SUB_PORT
-Restart=on-failure
-User=root
+ExecStart=/opt/subconverter/subconverter -config /opt/subconverter/config.json
+Restart=always
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOL
 
 systemctl daemon-reload
-systemctl enable subconvert
-systemctl start subconvert
+systemctl enable subconverter
+systemctl start subconverter
 
-# -------------------------------
-# 部署 Web 前端
-# -------------------------------
-echo "部署 Web 前端..."
-mkdir -p /var/www/vps-web
-cp -r ./web/* /var/www/vps-web/
-echo "Web 前端部署完成: http://<VPS_IP>:$PANEL_PORT/web/"
+# 5️⃣ 部署 Web 前端
+echo "[*] Deploying Web frontend..."
+mkdir -p /opt/web
+# 可以放置简单搜索 + 订阅转换前端 HTML/JS 文件
+# 例如：index.html、search.js
+# 用户可以自定义 HTML 文件内容
+echo "<html><body><h2>Welcome to VPS Web</h2></body></html>" > /opt/web/index.html
 
-# -------------------------------
-# 完成提示
-# -------------------------------
-echo "=== 部署完成 ==="
-echo "S-UI 面板: http://<VPS_IP>:$PANEL_PORT/app/"
-echo "Subconverter API: http://<VPS_IP>:$SUB_PORT/api/v1/"
-echo "Web 前端: http://<VPS_IP>:$PANEL_PORT/web/"
+# 使用 Caddy 作为静态 web server
+apt install -y caddy
+cat >/etc/caddy/Caddyfile <<EOL
+:80 {
+    root * /opt/web
+    file_server
+}
+EOL
+systemctl restart caddy
+
+echo "========= Deployment Finished ========="
+echo "S-UI URL: http://<your_server_ip>:$PANEL_PORT/app/"
+echo "Subconverter URL: http://<your_server_ip>:$SUB_PORT/sub?token=$SUB_TOKEN"

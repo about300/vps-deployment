@@ -1,8 +1,9 @@
 {
   "token": "",
-  "loglevel": "info",
-  "listen": "0.0.0.0",
-  "port": 8081,
-  "db_path": "subconverter.db",
-  "templates": []
+  "enableVless": true,
+  "listen": ":25500",
+  "clash": {
+    "enable": true,
+    "path": "/sub.yaml"
+  }
 }

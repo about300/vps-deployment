@@ -169,6 +169,7 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 25500/tcp  # Subconverter
 ufw allow 3000/tcp   # AdGuard Home
+ufw allow 8445/tcp   # DNS/解析专用
 ufw --force enable
 
 # ==================== 完成 ====================
@@ -181,4 +182,4 @@ echo "订阅转换:      https://${MAIN_DOMAIN}/sub/"
 echo "s-ui 管理面板: https://${MAIN_DOMAIN}/app"
 echo "AdGuard Home:   https://${MAIN_DOMAIN}:3000"
 echo ""
-echo -e "${YELLOW}请确保 VPS 外网安全组允许端口 22,80,443,25500,3000${NC}"
+echo -e "${YELLOW}请确保 VPS 外网安全组允许端口 22,80,443,25500,3000,8445${NC}"

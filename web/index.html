@@ -1,98 +1,19 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VPS & 翻墙服务中心</title>
-  <style>
-    body {
-      font-family: Arial, "Segoe UI", sans-serif;
-      background: #f6f6f8;
-      margin: 0;
-      padding: 0;
-      color: #333;
-      text-align: center;
-    }
-    header {
-      background: #0078d7;
-      color: #fff;
-      padding: 20px 0;
-      font-size: 26px;
-      font-weight: bold;
-    }
-    .container {
-      margin: 50px auto;
-      max-width: 800px;
-    }
-    .search-box {
-      display: flex;
-      justify-content: center;
-      margin-top: 30px;
-    }
-    .search-box input {
-      width: 60%;
-      padding: 15px;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      font-size: 18px;
-    }
-    .search-box button {
-      padding: 15px 22px;
-      margin-left: 8px;
-      background: #28a745;
-      color: white;
-      border: none;
-      font-size: 18px;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-    .links {
-      margin-top: 40px;
-    }
-    .links a {
-      display: inline-block;
-      margin: 12px 18px;
-      padding: 12px 18px;
-      background: #0b63e6;
-      color: white;
-      text-decoration: none;
-      border-radius: 6px;
-      font-size: 18px;
-      font-weight: bold;
-    }
-    .footer {
-      margin-top: 60px;
-      color: #888;
-      font-size: 14px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Search the Web</title>
+<link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-
-<header>📡 VPS & 订阅转换中心</header>
-
 <div class="container">
-  <p>欢迎使用你的 VPS！输入关键词直接搜索，或使用下面的功能入口：</p>
-
-  <!-- 搜索框（默认使用 Bing） -->
+  <img src="/img/logo.png" alt="Logo" class="logo">
   <div class="search-box">
-    <form method="GET" action="https://www.bing.com/search" target="_blank">
-      <input type="text" name="q" placeholder="输入搜索关键词，例如 v2ray 教程 ..." />
-      <button type="submit">🔍搜索</button>
-    </form>
-  </div>
-
-  <!-- 快捷入口按钮 -->
-  <div class="links">
-    <a href="/sub/">📥 订阅转换</a>
-    <a href="/app">📊 s-ui 面板</a>
-  </div>
-
-  <div class="footer">
-    访问 /sub/ 进行订阅转换，访问 /app 进入管理面板。<br>
-    主页由 VPS 自动部署维护。
+    <input id="search-input" type="text" placeholder="Search the web...">
+    <button onclick="search()">Search</button>
   </div>
 </div>
-
+<script src="/js/main.js"></script>
 </body>
 </html>

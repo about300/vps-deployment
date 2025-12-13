@@ -1,6 +1,7 @@
 #!/bin/bash
 # =================================================================
 # VPS 全栈一键部署脚本 (Web首页 + s-ui + Subconverter + VLESS共用443)
+# 修正版，使用 git clone 拉取 Subconverter 前端
 # 适配 Ubuntu 24.0
 # =================================================================
 
@@ -35,7 +36,6 @@ log "====== 阶段1：安装基础环境 ======"
 apt update && apt upgrade -y
 apt install -y curl wget git socat cron jq lsof unzip nginx-extras unzip
 
-# 检查 nginx stream 模块
 if ! nginx -V 2>&1 | grep -q -- '--with-stream'; then
     error "Nginx 不包含 stream 模块，请安装 nginx-extras"
 fi
@@ -83,12 +83,12 @@ cd $WORK_DIR && nohup ./bin/subconverter -c config/subconverter.pref.ini >/dev/n
 log "Subconverter API 启动在端口 25500"
 
 # Subconverter 官方前端
-log "====== 部署 Subconverter 官方前端 ======"
+log "====== 部署 Subconverter 官方前端 (git clone) ======"
 SUB_FRONTEND_DIR="$WORK_DIR/web/sub"
 mkdir -p $SUB_FRONTEND_DIR
-curl -sL https://github.com/ACL4SSR/ACL4SSR-SubConverter-Frontend/archive/refs/heads/gh-pages.zip -o /tmp/sub_frontend.zip
-unzip -o /tmp/sub_frontend.zip -d /tmp/
-mv /tmp/ACL4SSR-SubConverter-Frontend-gh-pages/* $SUB_FRONTEND_DIR/
+git clone --depth 1 --branch gh-pages https://github.com/ACL4SSR/ACL4SSR-SubConverter-Frontend.git /tmp/sub_frontend
+mv /tmp/sub_frontend/* $SUB_FRONTEND_DIR/
+rm -rf /tmp/sub_frontend
 log "Subconverter 前端部署完成：$SUB_FRONTEND_DIR"
 
 # ==================== 阶段3：申请 SSL ====================

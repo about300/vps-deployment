@@ -3,6 +3,7 @@
 # VPS 全栈一键部署脚本 (Nginx + s-ui + Web + Subconverter + AdGuard Home)
 # 不使用子域名，统一主域名 443 端口分流
 # 适配 Ubuntu 24 minimal/stream
+# 自动执行，无需交互
 # =================================================================
 
 set -e
@@ -14,29 +15,19 @@ log() { echo -e "${GREEN}[$(date '+%H:%M:%S')] $1${NC}"; }
 warn() { echo -e "${YELLOW}[!] $1${NC}"; }
 error() { echo -e "${RED}[x] $1${NC}"; exit 1; }
 
-# ==================== 输入配置 ====================
-clear
-echo -e "${CYAN}╔════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║     VPS 全栈部署脚本 - Ubuntu24    ║${NC}"
-echo -e "${CYAN}╚════════════════════════════════════╝${NC}"
-echo ""
+# ==================== 配置 ====================
+MAIN_DOMAIN="yourdomain.com"       # 请修改为你的主域名
+CERT_EMAIL="youremail@example.com" # 请修改为你的邮箱
 
-read -p "1. 请输入主域名 (例如: example.com): " MAIN_DOMAIN
-read -p "2. 请输入邮箱 (用于申请SSL证书): " CERT_EMAIL
-
-echo ""
-log "配置摘要："
+log "自动部署配置摘要："
 echo "  - 主域名: $MAIN_DOMAIN"
 echo "  - 证书邮箱: $CERT_EMAIL"
-echo ""
-warn "脚本将彻底清理系统可能存在的旧版Nginx并安装依赖。"
-read -p "按 Enter 开始部署 (Ctrl+C 取消)..."
 
 # ==================== 阶段0：最小化系统修复 ====================
 log "====== 阶段0：恢复 minimal 系统依赖 ======"
 sudo unminimize || true
 sudo apt update && sudo apt upgrade -y
-sudo add-apt-repository universe
+sudo add-apt-repository universe -y
 sudo apt update
 sudo apt install -y nginx-extras unzip curl wget git socat lsof jq ufw software-properties-common
 
@@ -47,7 +38,6 @@ mkdir -p $WORK_DIR/{web,sub,bin,config}
 chown -R www-data:www-data $WORK_DIR
 chmod -R 755 $WORK_DIR
 
-# Web主页示例
 cat > $WORK_DIR/web/index.html <<'EOF'
 <!DOCTYPE html>
 <html>

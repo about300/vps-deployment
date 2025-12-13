@@ -1,175 +1,175 @@
 #!/bin/bash
-# =================================================================
-# VPS 全栈一键部署脚本 (Nginx + s-ui + Web + Subconverter + AdGuard Home)
-# 不使用子域名，统一主域名 443 端口分流
-# 适配 Ubuntu 24 minimal/stream
-# 自动执行，无需交互
-# =================================================================
+# =========================================================
+# VPS 全栈一键部署（最终稳定版，证书改为 key/crt）
+# Ubuntu 24 / minimal
+# Web + Subconverter + s-ui + AdGuard Home + UFW
+# 443 共用 / 无子域名
+# =========================================================
 
 set -e
-exec 2>&1
+export DEBIAN_FRONTEND=noninteractive
 
-# ==================== 颜色定义 ====================
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
-log() { echo -e "${GREEN}[$(date '+%H:%M:%S')] $1${NC}"; }
-warn() { echo -e "${YELLOW}[!] $1${NC}"; }
-error() { echo -e "${RED}[x] $1${NC}"; exit 1; }
+GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
+log(){ echo -e "${GREEN}[$(date +%H:%M:%S)] $1${NC}"; }
+die(){ echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
 
-# ==================== 配置 ====================
-MAIN_DOMAIN="yourdomain.com"       # 请修改为你的主域名
-CERT_EMAIL="youremail@example.com" # 请修改为你的邮箱
+# ================== 必要输入（仅 2 项） ==================
+read -rp "请输入主域名（如 example.com）: " MAIN_DOMAIN
+[[ -z "$MAIN_DOMAIN" ]] && die "域名不能为空"
 
-log "自动部署配置摘要："
-echo "  - 主域名: $MAIN_DOMAIN"
-echo "  - 证书邮箱: $CERT_EMAIL"
+read -rp "请输入邮箱（用于 SSL 证书）: " CERT_EMAIL
+[[ -z "$CERT_EMAIL" ]] && die "邮箱不能为空"
 
-# ==================== 阶段0：最小化系统修复 ====================
-log "====== 阶段0：恢复 minimal 系统依赖 ======"
-sudo unminimize || true
-sudo apt update && sudo apt upgrade -y
-sudo add-apt-repository universe -y
-sudo apt update
-sudo apt install -y nginx-extras unzip curl wget git socat lsof jq ufw software-properties-common
+# ================== 固定路径 ==================
+WORKDIR="/opt/vps-deploy"
+WEB_DIR="$WORKDIR/web"
+SUB_DIR="$WEB_DIR/sub"
+CERT_DIR="/root"
 
-# ==================== 阶段1：Web目录创建 ====================
-log "====== 阶段1：创建 Web 目录 ======"
-WORK_DIR="/opt/vps-deploy"
-mkdir -p $WORK_DIR/{web,sub,bin,config}
-chown -R www-data:www-data $WORK_DIR
-chmod -R 755 $WORK_DIR
+# ================== 阶段0：基础环境 ==================
+log "阶段0：安装基础环境"
+apt update -y
+apt install -y curl wget git unzip socat lsof jq nginx-extras ufw
 
-cat > $WORK_DIR/web/index.html <<'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>VPS Home</title>
-<style>
-body{font-family:Arial;text-align:center;margin:0;padding:0;background:#f0f0f0;}
-header{background:#0078d7;color:#fff;padding:10px;font-size:20px;}
-a.button{display:inline-block;margin:10px;padding:10px 20px;background:#28a745;color:#fff;text-decoration:none;border-radius:5px;}
-</style>
-</head>
-<body>
-<header>Welcome to VPS</header>
-<div style="margin-top:50px;">
-<a class="button" href="/sub/">订阅转换</a>
-</div>
-</body>
-</html>
+# ================== 阶段1：部署 Web 静态文件 ==================
+log "阶段1：部署 Web 目录"
+mkdir -p "$WEB_DIR"
+if [ -d "./web" ]; then
+  cp -r ./web/* "$WEB_DIR/"
+else
+  die "未检测到 ./web 目录，请确认仓库结构"
+fi
+
+# ================== 阶段2：申请 SSL（顺序修正） ==================
+log "阶段2：申请 SSL 证书"
+
+systemctl stop nginx 2>/dev/null || true
+lsof -ti:80 | xargs kill -9 2>/dev/null || true
+
+curl -s https://get.acme.sh | sh -s email="$CERT_EMAIL"
+source ~/.bashrc
+
+# 申请证书
+~/.acme.sh/acme.sh --issue -d "$MAIN_DOMAIN" --standalone --force
+
+# 安装证书到 /root，并设置 reload 命令
+~/.acme.sh/acme.sh --install-cert -d "$MAIN_DOMAIN" \
+  --key-file       "$CERT_DIR/privkey.key" \
+  --fullchain-file "$CERT_DIR/fullchain.crt" \
+  --reloadcmd "systemctl reload nginx || true; systemctl restart AdGuardHome || true"
+
+chmod 600 "$CERT_DIR/privkey.key"
+chmod 644 "$CERT_DIR/fullchain.crt"
+
+# ================== 阶段3：安装 s-ui（官方） ==================
+log "阶段3：安装 s-ui"
+bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+
+# ================== 阶段4：Subconverter API ==================
+log "阶段4：Subconverter API"
+
+mkdir -p "$WORKDIR/bin" "$WORKDIR/config"
+
+wget -q -O "$WORKDIR/bin/subconverter" \
+  https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+chmod +x "$WORKDIR/bin/subconverter"
+
+cat > "$WORKDIR/config/subconverter.ini" <<EOF
+listen=127.0.0.1
+port=25500
+managed_config_prefix=https://${MAIN_DOMAIN}/sub
 EOF
 
-# ==================== 阶段2：acme.sh 申请 SSL ====================
-log "====== 阶段2：申请 SSL ======"
-curl -s https://get.acme.sh | sh -s email=$CERT_EMAIL > /dev/null
-source ~/.bashrc
-ln -sf /root/.acme.sh/acme.sh /usr/local/bin/acme.sh
+nohup "$WORKDIR/bin/subconverter" -c "$WORKDIR/config/subconverter.ini" >/dev/null 2>&1 &
 
-CERT_DIR="/etc/ssl/private/${MAIN_DOMAIN}"
-mkdir -p $CERT_DIR
-acme.sh --issue -d "$MAIN_DOMAIN" --standalone --keylength ec-256
-acme.sh --install-cert -d "$MAIN_DOMAIN" --ecc \
-    --key-file $CERT_DIR/privkey.pem \
-    --fullchain-file $CERT_DIR/fullchain.pem
+# ================== 阶段5：Nginx（443 共用） ==================
+log "阶段5：配置 Nginx"
 
-# ==================== 阶段3：Nginx 配置 ====================
-log "====== 阶段3：配置 Nginx ======"
-XRAY_PORT=443
-SUI_WEB_PORT=2095
-SUBCONVERTER_PORT=25500
 cat > /etc/nginx/nginx.conf <<EOF
 user www-data;
 worker_processes auto;
-pid /run/nginx.pid;
-events { worker_connections 768; }
+events { worker_connections 1024; }
 
 stream {
-    map \$ssl_preread_server_name \$backend {
-        default xray_backend;  # 所有 443 流量默认走 VLESS/Reality
-    }
-    upstream xray_backend { server 127.0.0.1:${XRAY_PORT}; }
-    server {
-        listen 443 reuseport;
-        listen [::]:443 reuseport;
-        proxy_pass \$backend;
-        ssl_preread on;
-        proxy_protocol on;
-        tcp_nodelay on;
-    }
+  map \$ssl_preread_server_name \$backend {
+    $MAIN_DOMAIN web;
+    default xray;
+  }
+
+  upstream web  { server 127.0.0.1:8443; }
+  upstream xray { server 127.0.0.1:443; }
+
+  server {
+    listen 443 reuseport;
+    proxy_pass \$backend;
+    ssl_preread on;
+  }
 }
 
 http {
-    server {
-        listen 127.0.0.1:5443 ssl http2;
-        server_name ${MAIN_DOMAIN};
-        ssl_certificate ${CERT_DIR}/fullchain.pem;
-        ssl_certificate_key ${CERT_DIR}/privkey.pem;
-        root $WORK_DIR/web;
-        index index.html;
-        location /sub/ { alias $WORK_DIR/sub/; index index.html; try_files \$uri \$uri/ /sub/index.html; }
-        location /app { proxy_pass http://127.0.0.1:${SUI_WEB_PORT}/app; proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; }
+  server {
+    listen 127.0.0.1:8443 ssl http2;
+    server_name $MAIN_DOMAIN;
+
+    ssl_certificate     $CERT_DIR/fullchain.crt;
+    ssl_certificate_key $CERT_DIR/privkey.key;
+
+    root $WEB_DIR;
+    index index.html;
+
+    location /sub/ {
+      alias $SUB_DIR/;
+      try_files \$uri \$uri/ /index.html;
     }
 
-    server {
-        listen 80;
-        server_name ${MAIN_DOMAIN};
-        location /.well-known/acme-challenge/ { root /var/www/html; }
-        location / { return 301 https://\$server_name\$request_uri; }
+    location /app/ {
+      proxy_pass http://127.0.0.1:2095/app/;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
     }
+  }
 }
 EOF
 
 nginx -t
 systemctl restart nginx
 
-# ==================== 阶段4：s-ui 面板 ====================
-log "====== 阶段4：安装 s-ui 面板 ======"
-SUI_TMP="/tmp/s-ui"
-mkdir -p "$SUI_TMP" && cd "$SUI_TMP"
-bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+# ================== 阶段6：安装 AdGuard Home ==================
+log "阶段6：安装 AdGuard Home"
+curl -s https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
 
-# ==================== 阶段5：Subconverter API ====================
-log "====== 阶段5：部署 Subconverter API ======"
-REPO_URL="https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter"
-wget -q -O $WORK_DIR/bin/subconverter $REPO_URL && chmod +x $WORK_DIR/bin/subconverter
-cat > $WORK_DIR/config/subconverter.pref.ini <<EOF
-listen=127.0.0.1
-port=${SUBCONVERTER_PORT}
-api_access_token=
-managed_config_prefix=https://${MAIN_DOMAIN}/sub
+# 修改 AdGuard Home TLS 配置
+AGH_CONFIG="/opt/AdGuardHome/AdGuardHome.yaml"
+if [ -f "$AGH_CONFIG" ]; then
+  sed -i "/^tls:/,+4d" "$AGH_CONFIG"
+  cat >> "$AGH_CONFIG" <<EOF
+tls:
+  enabled: true
+  certificate_chain: $CERT_DIR/fullchain.crt
+  private_key: $CERT_DIR/privkey.key
 EOF
-cd $WORK_DIR && nohup ./bin/subconverter -c config/subconverter.pref.ini >/dev/null 2>&1 &
+  systemctl restart AdGuardHome
+fi
 
-# ==================== 阶段6：安装 AdGuard Home ====================
-log "====== 阶段6：安装 AdGuard Home ======"
-AGH_DIR="/opt/adguardhome"
-mkdir -p $AGH_DIR && cd $AGH_DIR
-wget -q https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.tar.gz
-tar xzf AdGuardHome_linux_amd64.tar.gz
-./AdGuardHome -s install
-systemctl enable AdGuardHome
-systemctl start AdGuardHome
+# ================== 阶段7：UFW 防火墙 ==================
+log "阶段7：配置 UFW"
 
-# ==================== 阶段7：配置 UFW 防火墙 ====================
-log "====== 阶段7：配置 UFW 防火墙 ======"
+ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw allow 25500/tcp  # Subconverter
-ufw allow 3000/tcp   # AdGuard Home
-ufw allow 8445/tcp   # DNS/解析专用
+ufw allow 22
+ufw allow 80
+ufw allow 443
+ufw allow 25500
+ufw allow 3000
+ufw allow 8445
 ufw --force enable
 
-# ==================== 完成 ====================
-clear
-echo -e "${CYAN}╔════════════════════════════════╗${NC}"
-echo -e "${CYAN}║         部署完成！           ║${NC}"
-echo -e "${CYAN}╚════════════════════════════════╝${NC}"
-echo "访问主页:      https://${MAIN_DOMAIN}"
-echo "订阅转换:      https://${MAIN_DOMAIN}/sub/"
-echo "s-ui 管理面板: https://${MAIN_DOMAIN}/app"
-echo "AdGuard Home:   https://${MAIN_DOMAIN}:3000"
-echo ""
-echo -e "${YELLOW}请确保 VPS 外网安全组允许端口 22,80,443,25500,3000,8445${NC}"
+# ================== 完成 ==================
+log "部署完成"
+echo "========================================"
+echo "主页:        https://$MAIN_DOMAIN"
+echo "订阅转换:    https://$MAIN_DOMAIN/sub/"
+echo "s-ui 面板:   https://$MAIN_DOMAIN/app"
+echo "AdGuard:     https://$MAIN_DOMAIN:3000"
+echo "========================================"

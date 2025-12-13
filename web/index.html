@@ -2,18 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Search the Web</title>
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+
 <div class="container">
-  <img src="/img/logo.png" alt="Logo" class="logo">
-  <div class="search-box">
-    <input id="search-input" type="text" placeholder="Search the web...">
-    <button onclick="search()">Search</button>
+  <img src="/img/logo.png" class="logo" alt="Logo">
+  <div class="search-area">
+    <input id="searchInput" type="text" placeholder="Search something...">
+    <button onclick="onSearch()">Search</button>
   </div>
+
+  <div id="resultArea"></div>
 </div>
+
 <script src="/js/main.js"></script>
 </body>
 </html>

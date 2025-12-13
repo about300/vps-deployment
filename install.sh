@@ -39,57 +39,45 @@ read -p "按 Enter 开始部署 (Ctrl+C 取消)..."
 # ==================== 第一阶段：基础环境 ====================
 log "====== 阶段1：基础环境 ======"
 apt update && apt upgrade -y
-apt install -y curl wget git socat cron jq lsof unzip nginx-full
+apt install -y curl wget git socat cron jq lsof unzip nginx-extras
 
-# 确保 nginx-full 支持 stream
+# 确保 nginx 支持 stream
 if ! nginx -V 2>&1 | grep -q -- '--with-stream'; then
-    error "Nginx 不包含 stream 模块，请检查安装"
+    error "Nginx 不包含 stream 模块，请检查安装 nginx-extras"
 fi
 
-# ==================== 第二阶段：部署 s-ui 面板 ====================
-log "====== 阶段2：安装 s-ui 面板 ======"
-SUI_TMP="/tmp/s-ui"
-mkdir -p "$SUI_TMP" && cd "$SUI_TMP"
-wget -q -O s-ui.tar.gz https://github.com/alireza0/s-ui/releases/download/v1.3.7/s-ui-linux-amd64.tar.gz
-tar xzf s-ui.tar.gz
-chmod +x s-ui.sh
-
-log "请在接下来的交互中设置管理员账号和密码"
-./s-ui.sh install
-systemctl enable s-ui
-systemctl restart s-ui
-
-# 获取 s-ui 默认端口
-SUI_WEB_PORT=2095
-CONFIG_FILE="/usr/local/s-ui/s-ui.conf"
-if [ -f "$CONFIG_FILE" ]; then
-    CONFIG_PORT=$(jq -r '.web.port // empty' "$CONFIG_FILE" 2>/dev/null)
-    [ -n "$CONFIG_PORT" ] && [ "$CONFIG_PORT" != "null" ] && SUI_WEB_PORT=$CONFIG_PORT
-fi
-log "s-ui 面板端口: ${SUI_WEB_PORT}"
-
-# ==================== 第三阶段：部署 Web 前端 + Subconverter ====================
-log "====== 阶段3：Web前端 + Subconverter ======"
+# ==================== 第二阶段：Web 前端 + Subconverter ====================
+log "====== 阶段2：Web前端 + Subconverter ======"
 WORK_DIR="/opt/vps-deploy"
 mkdir -p $WORK_DIR/{web,bin,config}
 
 # Web 前端 (模拟搜索主页 + 订阅转换入口)
 cat > $WORK_DIR/web/index.html <<'EOF'
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <title>VPS Home</title>
 <style>
-body{font-family:Arial;text-align:center;margin:0;padding:0;background:#f0f0f0;}
-header{background:#0078d7;color:#fff;padding:10px;font-size:20px;}
-a.button{display:inline-block;margin:10px;padding:10px 20px;background:#28a745;color:#fff;text-decoration:none;border-radius:5px;}
+body{font-family:Arial;text-align:center;margin:0;padding:0;background:#f6f7fb;}
+header{display:flex;justify-content:flex-end;padding:18px;}
+a.button{display:inline-block;margin:0 10px;padding:8px 12px;background:#0b63e6;color:#fff;border-radius:6px;text-decoration:none;}
+.brand{font-size:28px;font-weight:700;margin:20px 0;}
+.search{margin-top:30px;}
+input[type=text]{padding:12px;width:60%;border-radius:10px;border:1px solid #dfe6f5;font-size:16px;}
+button{padding:12px 20px;border:none;border-radius:8px;background:#28a745;color:#fff;font-weight:600;cursor:pointer;}
 </style>
 </head>
 <body>
-<header>Welcome to VPS</header>
-<div style="margin-top:50px;">
-<a class="button" href="/sub/">订阅转换</a>
+<header>
+  <a class="button" href="/sub/">订阅转换</a>
+</header>
+<div class="brand">MyHome</div>
+<div class="search">
+  <form method="GET" action="https://www.bing.com/search" target="_blank">
+    <input type="text" name="q" placeholder="搜索..." />
+    <button type="submit">搜索</button>
+  </form>
 </div>
 </body>
 </html>
@@ -109,8 +97,8 @@ EOF
     log "Subconverter 启动在端口 25500"
 fi
 
-# ==================== 第四阶段：申请 SSL ====================
-log "====== 阶段4：申请 SSL ======"
+# ==================== 第三阶段：申请 SSL ====================
+log "====== 阶段3：申请 SSL ======"
 curl -s https://get.acme.sh | sh -s email=$CERT_EMAIL > /dev/null
 source ~/.bashrc
 ln -sf /root/.acme.sh/acme.sh /usr/local/bin/acme.sh
@@ -125,8 +113,8 @@ acme.sh --install-cert -d "$MAIN_DOMAIN" --ecc \
     --key-file $CERT_DIR/privkey.pem \
     --fullchain-file $CERT_DIR/fullchain.pem
 
-# ==================== 第五阶段：Nginx SNI 分流 ====================
-log "====== 阶段5：配置 Nginx ======"
+# ==================== 第四阶段：Nginx SNI 分流 ====================
+log "====== 阶段4：配置 Nginx ======"
 XRAY_PORT=443
 cat > /etc/nginx/nginx.conf <<EOF
 user www-data;
@@ -158,7 +146,7 @@ http {
         ssl_certificate_key ${CERT_DIR}/privkey.pem;
         root $WORK_DIR/web;
         index index.html;
-        location /app { proxy_pass http://127.0.0.1:${SUI_WEB_PORT}/app; proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; }
+        location /app { proxy_pass http://127.0.0.1:2095/app; proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; }
         location /sub/ { proxy_pass http://127.0.0.1:25500/; proxy_set_header Host \$host; }
     }
     server {
@@ -172,6 +160,27 @@ EOF
 
 nginx -t
 systemctl restart nginx
+
+# ==================== 第五阶段：安装 s-ui 面板 ====================
+log "====== 阶段5：安装 s-ui 面板 ======"
+SUI_DIR="/opt/s-ui"
+if [ ! -d "$SUI_DIR" ]; then
+    git clone https://github.com/alireza0/s-ui.git "$SUI_DIR"
+fi
+cd "$SUI_DIR"
+chmod +x s-ui
+./s-ui install
+systemctl enable s-ui
+systemctl restart s-ui
+
+# 获取 s-ui 面板端口
+SUI_WEB_PORT=2095
+CONFIG_FILE="/usr/local/s-ui/s-ui.conf"
+if [ -f "$CONFIG_FILE" ]; then
+    CONFIG_PORT=$(jq -r '.web.port // empty' "$CONFIG_FILE" 2>/dev/null)
+    [ -n "$CONFIG_PORT" ] && [ "$CONFIG_PORT" != "null" ] && SUI_WEB_PORT=$CONFIG_PORT
+fi
+log "s-ui 面板端口: ${SUI_WEB_PORT}"
 
 # ==================== 完成 ====================
 clear

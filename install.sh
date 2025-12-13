@@ -2,14 +2,14 @@
 set -e
 exec 2>&1
 
-# 颜色定义
+# ======== 颜色定义 ========
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
 log() { echo -e "${GREEN}[$(date '+%H:%M:%S')] $1${NC}"; }
 warn() { echo -e "${YELLOW}[!] $1${NC}"; }
 info() { echo -e "${BLUE}[i] $1${NC}"; }
 error() { echo -e "${RED}[x] $1${NC}"; exit 1; }
 
-# ==================== 用户输入 ====================
+# ======== 用户输入 ========
 read -p "请输入主域名 (例如: example.com): " MAIN_DOMAIN
 read -p "请输入邮箱 (用于Let\'s Encrypt通知): " CERT_EMAIL
 
@@ -18,7 +18,7 @@ echo "  - 主域名: $MAIN_DOMAIN"
 echo "  - 邮箱: $CERT_EMAIL"
 read -p "按 Enter 开始部署 (Ctrl+C 取消)..."
 
-# ==================== 阶段1：安装基础环境 ====================
+# ======== 阶段1：基础环境 ========
 log "====== 阶段1：安装基础环境 ======"
 apt update && apt upgrade -y
 apt install -y nginx-extras unzip curl wget git socat lsof cron ufw
@@ -32,17 +32,16 @@ ufw allow 443/tcp
 ufw allow 8445/tcp
 ufw --force enable
 
-# ==================== 阶段2：部署 Web 目录 ====================
+# ======== 阶段2：部署 Web 目录 ========
 log "====== 阶段2：部署 Web 目录 ======"
 WEB_DIR="/opt/vps-deploy/web"
 mkdir -p $WEB_DIR
-# 克隆你的仓库 web 内容
 rm -rf /tmp/web_temp
 git clone https://github.com/about300/vps-deployment.git /tmp/web_temp
 cp -r /tmp/web_temp/web/* $WEB_DIR/
 log "Web目录已部署到 $WEB_DIR"
 
-# ==================== 阶段3：部署 Subconverter API ========
+# ======== 阶段3：部署 Subconverter API ========
 log "====== 阶段3：部署 Subconverter API ======"
 BIN_DIR="/opt/vps-deploy/bin"
 CONFIG_DIR="/opt/vps-deploy/config"
@@ -58,19 +57,12 @@ EOF
 nohup $BIN_DIR/subconverter -c $CONFIG_DIR/subconverter.pref.ini >/dev/null 2>&1 &
 log "Subconverter API 启动在端口 25500"
 
-# ==================== 阶段4：部署 s-ui 面板 ====================
+# ======== 阶段4：部署 s-ui 面板 ========
 log "====== 阶段4：部署 s-ui 面板 ======"
-SUI_TMP="/tmp/s-ui"
-mkdir -p "$SUI_TMP" && cd "$SUI_TMP"
-wget -q -O s-ui.tar.gz https://github.com/alireza0/s-ui/releases/download/v1.3.7/s-ui-linux-amd64.tar.gz
-tar xzf s-ui.tar.gz
-chmod +x s-ui.sh
-./s-ui.sh install
-systemctl enable s-ui
-systemctl restart s-ui
+bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 log "s-ui 面板已安装，默认端口 2095"
 
-# ==================== 阶段5：申请 Let\'s Encrypt 证书 ====================
+# ======== 阶段5：申请 Let\'s Encrypt 证书 ========
 log "====== 阶段5：申请 Let\'s Encrypt 证书 ======"
 CERT_DIR="/root/cert"
 mkdir -p $CERT_DIR
@@ -80,9 +72,9 @@ source ~/.bashrc
 /root/.acme.sh/acme.sh --install-cert -d "$MAIN_DOMAIN" \
     --key-file $CERT_DIR/privkey.key \
     --fullchain-file $CERT_DIR/fullchain.crt \
-    --reloadcmd "systemctl restart nginx && systemctl restart AdGuardHome"
+    --reloadcmd "systemctl restart nginx"
 
-# ==================== 阶段6：配置 Nginx ====================
+# ======== 阶段6：配置 Nginx ========
 log "====== 阶段6：配置 Nginx ======"
 cat > /etc/nginx/sites-available/default <<EOF
 server {
@@ -109,7 +101,7 @@ EOF
 
 nginx -t && systemctl restart nginx
 
-# ==================== 阶段7：安装 AdGuardHome ====================
+# ======== 阶段7：安装 AdGuardHome ========
 log "====== 阶段7：安装 AdGuardHome ======"
 AGH_DIR="/opt/AdGuardHome"
 mkdir -p $AGH_DIR && cd $AGH_DIR
@@ -118,7 +110,7 @@ tar xzf AdGuardHome_linux_amd64.tar.gz
 ./AdGuardHome -s install
 log "AdGuardHome 已安装"
 
-# ==================== 完成 ====================
+# ======== 完成 ========
 clear
 echo -e "${CYAN}╔════════════════════════════════╗${NC}"
 echo -e "${CYAN}║         部署完成！           ║${NC}"
@@ -126,5 +118,5 @@ echo -e "${CYAN}╚════════════════════�
 echo "访问主页:      https://$MAIN_DOMAIN"
 echo "订阅转换:      https://$MAIN_DOMAIN/sub/"
 echo "s-ui 管理面板: https://$MAIN_DOMAIN/app"
-echo "AdGuardHome 登录: https://$MAIN_DOMAIN:3000"  # 默认端口3000
+echo "AdGuardHome 登录: https://$MAIN_DOMAIN:3000"
 echo -e "${YELLOW}请确保防火墙已开放 22/80/443/8445 端口${NC}"

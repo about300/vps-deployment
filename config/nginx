@@ -1,0 +1,35 @@
+# stream-sni.conf
+# 放在 /etc/nginx/conf.d/stream-sni.conf
+# 注意：nginx 必须编译/安装时包含 stream 和 ssl_preread 模块
+
+stream {
+    # map SNI 到上游名字
+    map $ssl_preread_server_name $upstream_name {
+        host.example.com   web_up;
+        panel.example.com  web_up;
+        sub.example.com    web_up;
+        vless.example.com  vless_up;
+        # add other vless/real domain -> vless_up as needed
+        default            web_up;
+    }
+
+    upstream web_up {
+        # 内部 nginx TLS 终结端口（本机）
+        server 127.0.0.1:10443;
+    }
+
+    upstream vless_up {
+        # s-ui / xray 真实后端端口（s-ui 配置的节点监听端口）
+        # 安装后将这里改成 s-ui 或 xray 的监听端口，例如 127.0.0.1:8443
+        server 127.0.0.1:8443;
+    }
+
+    server {
+        listen 443;
+        proxy_pass $upstream_name;
+        ssl_preread on;
+        # 可选：设置超时
+        proxy_connect_timeout 5s;
+        proxy_timeout 1h;
+    }
+}

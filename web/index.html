@@ -1,45 +1,29 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MyHome — 搜索与订阅</title>
-  <style>
-    body{font-family:Inter,Segoe UI,system-ui,-apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial; background:#f6f7fb; margin:0; padding:0; display:flex; align-items:center; justify-content:center; height:100vh}
-    .wrap{width:min(880px,92%); text-align:center}
-    header{display:flex; justify-content:flex-end; padding:18px 0}
-    a.btn{display:inline-block; padding:8px 12px; border-radius:8px; text-decoration:none; background:#0b63e6; color:#fff; font-weight:600}
-    .brand{font-size:28px; font-weight:700; margin-bottom:28px}
-    .search{display:flex; gap:8px; align-items:center; justify-content:center}
-    .search input[type="text"]{width:60%; padding:14px; border-radius:12px; border:1px solid #dfe6f5; font-size:16px}
-    .search button{padding:12px 18px; border-radius:10px; border:none; cursor:pointer; font-weight:600}
-    footer{margin-top:28px; color:#666}
-    .links{margin-top:12px}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <!-- 右上角订阅转换按钮（指向 subconverter 路径 /subconvert/ 或你最终路径） -->
-      <a class="btn" href="/subconvert/" title="订阅转换 / Subconverter">订阅转换</a>
-    </header>
-
-    <div class="brand">MyHome</div>
-
-    <form class="search" method="GET" action="https://www.bing.com/search" target="_blank">
-      <!-- 默认用 bing 搜索，你也可以换成 google 等：把 action 改为 https://www.google.com/search -->
-      <input type="text" name="q" placeholder="在此搜索 (使用 Bing) — 示例：node vless reality" />
-      <button type="submit">搜索</button>
-    </form>
-
-    <div class="links">
-      <p>快速链接： <a href="/panel/" target="_blank">面板 (s-ui)</a> · <a href="/subconvert/" target="_blank">订阅转换</a></p>
-      <p style="color:#888; font-size:13px">提示：面板与订阅转换服务在你安装完后可用；如果目标是翻墙服务，请在 s-ui 中配置 VLESS + Reality 节点（放在最后安装）。</p>
-    </div>
-
-    <footer>
-      <small>© MyHome</small>
-    </footer>
-  </div>
-</body>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no">
+    <link rel="icon" href="<%= BASE_URL %>favicon.ico">
+    <link rel="stylesheet" href="/css/main.css">
+    <title>在线订阅转换工具</title>
+    <meta name="baidu-site-verification" content="code-GHUFOhLXve" />
+    <meta name="google-site-verification" content="DALjkFAMlwMgal-1jglP9oKjvGQjUNrV0OvHUZLSv_s" />
+    <meta name="keywords" content="全网最漂亮的订阅转换,暗黑模式,Clash,Quantumult X,Surge,Shadowrocket,订阅转换" />
+    <meta name="description" content="全网最漂亮的订阅转换,暗黑模式,Clash,Quantumult X,Surge,Shadowrocket,订阅转换" />
+    <meta name="color-scheme" content="light dark">
+  </head>
+  <body>
+    <section id="canvas-show" class="canvas-wrap">
+    <div id="canvas" class="gradient"></div>
+    </section>
+    <div id="app"></div>
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/three.min.js"></script>
+    <script src="/js/projector.js"></script>
+    <script src="/js/canvas-renderer.js"></script>
+    <script src="/js/3d-lines-animation.js"></script>
+    <script src="/js/color.js"></script>
+    <script src="/js/djtx.min.js" type="text/javascript" charset="utf-8"></script>
+  </body>
 </html>

@@ -1,8 +1,7 @@
 #!/bin/bash
 # =================================================================
 # VPS 全栈一键部署脚本 (Web首页 + s-ui + Subconverter + VLESS共用443)
-# 修正版，使用 git clone 拉取 Subconverter 前端
-# 适配 Ubuntu 24.0
+# 修正版，Ubuntu 24.0，Subconverter 前端无需用户名
 # =================================================================
 
 set -e
@@ -83,7 +82,7 @@ cd $WORK_DIR && nohup ./bin/subconverter -c config/subconverter.pref.ini >/dev/n
 log "Subconverter API 启动在端口 25500"
 
 # Subconverter 官方前端
-log "====== 部署 Subconverter 官方前端 (git clone) ======"
+log "====== 部署 Subconverter 官方前端 (git clone HTTPS 公有仓库) ======"
 SUB_FRONTEND_DIR="$WORK_DIR/web/sub"
 mkdir -p $SUB_FRONTEND_DIR
 git clone --depth 1 --branch gh-pages https://github.com/ACL4SSR/ACL4SSR-SubConverter-Frontend.git /tmp/sub_frontend

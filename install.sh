@@ -1,8 +1,7 @@
 #!/bin/bash
 # =================================================================
-# VPS 全栈一键部署脚本 (SNI分流 + Web前端 + s-ui面板 + Subconverter)
+# VPS 全栈一键部署脚本 (Web首页 + s-ui + Subconverter + VLESS共用443)
 # 适配 Ubuntu 24.0
-# 执行: bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/install.sh)
 # =================================================================
 
 set -e
@@ -20,25 +19,23 @@ echo -e "${CYAN}║     VPS 全栈部署脚本 - Ubuntu24    ║${NC}"
 echo -e "${CYAN}╚════════════════════════════════════╝${NC}"
 echo ""
 
-read -p "1. 请输入主域名 (例如: example.com): " MAIN_DOMAIN
-read -p "2. 请输入SNI子域名 [默认: proxy.${MAIN_DOMAIN}]: " PROXY_SNI
-PROXY_SNI=${PROXY_SNI:-"proxy.${MAIN_DOMAIN}"}
-read -p "3. 请输入邮箱 (用于申请SSL证书): " CERT_EMAIL
+read -p "请输入主域名 (例如: example.com): " MAIN_DOMAIN
+read -p "请输入邮箱 (用于申请SSL证书): " CERT_EMAIL
 
 echo ""
 log "配置摘要："
 echo "  - 主域名: $MAIN_DOMAIN"
-echo "  - 代理SNI域名: $PROXY_SNI"
 echo "  - 证书邮箱: $CERT_EMAIL"
 echo ""
 warn "脚本将彻底清理系统可能存在的旧版Nginx。"
 read -p "按 Enter 开始部署 (Ctrl+C 取消)..."
 
 # ==================== 阶段1：基础环境 ====================
-log "====== 阶段1：基础环境 ======"
+log "====== 阶段1：安装基础环境 ======"
 apt update && apt upgrade -y
 apt install -y curl wget git socat cron jq lsof unzip nginx-extras unzip
 
+# 检查 nginx stream 模块
 if ! nginx -V 2>&1 | grep -q -- '--with-stream'; then
     error "Nginx 不包含 stream 模块，请安装 nginx-extras"
 fi
@@ -48,10 +45,29 @@ log "====== 阶段2：Web首页 + Subconverter API ======"
 WORK_DIR="/opt/vps-deploy"
 mkdir -p $WORK_DIR/{web,bin,config}
 
-# 下载 Web 首页
-curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/web/index.html -o $WORK_DIR/web/index.html
+# Web首页
+cat > $WORK_DIR/web/index.html <<'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>VPS Home</title>
+<style>
+body{font-family:Arial;text-align:center;margin:0;padding:0;background:#f0f0f0;}
+header{background:#0078d7;color:#fff;padding:10px;font-size:20px;}
+a.button{display:inline-block;margin:10px;padding:10px 20px;background:#28a745;color:#fff;text-decoration:none;border-radius:5px;}
+</style>
+</head>
+<body>
+<header>Welcome to VPS</header>
+<div style="margin-top:50px;">
+<a class="button" href="/sub/">订阅转换</a>
+</div>
+</body>
+</html>
+EOF
 
-# 下载 Subconverter 可执行文件
+# Subconverter 可执行文件
 curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter -o $WORK_DIR/bin/subconverter
 chmod +x $WORK_DIR/bin/subconverter
 
@@ -66,12 +82,10 @@ EOF
 cd $WORK_DIR && nohup ./bin/subconverter -c config/subconverter.pref.ini >/dev/null 2>&1 &
 log "Subconverter API 启动在端口 25500"
 
-# ==================== 阶段2.5：Subconverter 前端 ====================
-log "====== 阶段2.5：部署 Subconverter 官方前端 ======"
+# Subconverter 官方前端
+log "====== 部署 Subconverter 官方前端 ======"
 SUB_FRONTEND_DIR="$WORK_DIR/web/sub"
 mkdir -p $SUB_FRONTEND_DIR
-
-# 拉取官方 gh-pages 压缩包并解压
 curl -sL https://github.com/ACL4SSR/ACL4SSR-SubConverter-Frontend/archive/refs/heads/gh-pages.zip -o /tmp/sub_frontend.zip
 unzip -o /tmp/sub_frontend.zip -d /tmp/
 mv /tmp/ACL4SSR-SubConverter-Frontend-gh-pages/* $SUB_FRONTEND_DIR/
@@ -88,12 +102,12 @@ lsof -ti:80 | xargs kill -9 2>/dev/null || true
 
 CERT_DIR="/etc/ssl/private/${MAIN_DOMAIN}"
 mkdir -p $CERT_DIR
-acme.sh --issue -d "$MAIN_DOMAIN" -d "$PROXY_SNI" --standalone --keylength ec-256
+acme.sh --issue -d "$MAIN_DOMAIN" --standalone --keylength ec-256
 acme.sh --install-cert -d "$MAIN_DOMAIN" --ecc \
     --key-file $CERT_DIR/privkey.pem \
     --fullchain-file $CERT_DIR/fullchain.pem
 
-# ==================== 阶段4：Nginx SNI分流 ====================
+# ==================== 阶段4：Nginx配置 (stream + web) ====================
 log "====== 阶段4：配置 Nginx ======"
 XRAY_PORT=443
 cat > /etc/nginx/nginx.conf <<EOF
@@ -101,23 +115,19 @@ user www-data;
 worker_processes auto;
 pid /run/nginx.pid;
 events { worker_connections 768; }
+
 stream {
-    map \$ssl_preread_server_name \$backend {
-        ${MAIN_DOMAIN} web_backend;
-        ${PROXY_SNI} xray_backend;
-        default web_backend;
-    }
-    upstream web_backend { server 127.0.0.1:5443; }
     upstream xray_backend { server 127.0.0.1:${XRAY_PORT}; }
     server {
         listen 443 reuseport;
         listen [::]:443 reuseport;
-        proxy_pass \$backend;
+        proxy_pass xray_backend;
         ssl_preread on;
         proxy_protocol on;
         tcp_nodelay on;
     }
 }
+
 http {
     server {
         listen 127.0.0.1:5443 ssl http2;
@@ -131,7 +141,7 @@ http {
     }
     server {
         listen 80;
-        server_name ${MAIN_DOMAIN} ${PROXY_SNI};
+        server_name ${MAIN_DOMAIN};
         location /.well-known/acme-challenge/ { root /var/www/html; }
         location / { return 301 https://\$server_name\$request_uri; }
     }
@@ -166,8 +176,8 @@ echo -e "${CYAN}║      部署完成!访问信息        ║${NC}"
 echo -e "${CYAN}╚════════════════════════════════╝${NC}"
 echo "Web主页: https://${MAIN_DOMAIN}"
 echo "s-ui面板: https://${MAIN_DOMAIN}/app"
-echo "Subconverter 前端: https://${MAIN_DOMAIN}/sub/"
+echo "Subconverter前端: https://${MAIN_DOMAIN}/sub/"
 echo "Subconverter API: 127.0.0.1:25500"
-echo "SNI代理地址: ${PROXY_SNI}:443"
+echo "VLESS/Reality 443共用端口"
 echo ""
 echo -e "${YELLOW}请确保防火墙已开放 80 和 443 端口${NC}"

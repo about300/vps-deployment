@@ -1,23 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Search the Web</title>
-<link rel="stylesheet" href="/css/style.css">
+    <meta charset="UTF-8">
+    <title>Search</title>
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-
-<div class="container">
-  <img src="/img/logo.png" class="logo" alt="Logo">
-  <div class="search-area">
-    <input id="searchInput" type="text" placeholder="Search something...">
-    <button onclick="onSearch()">Search</button>
-  </div>
-
-  <div id="resultArea"></div>
-</div>
-
-<script src="/js/main.js"></script>
+    <div class="container">
+        <!-- 内嵌 Base64 Logo -->
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAACWCAMAAAD4/5dhAAAAM1BMVEUAAAD///+rq6u3t7fZ2dnx8fHb29vR0dHf39/j4+Pq6uq7u7vX19fDw8Pj4+N8fHy7u7u+vr5W1GJ4AAAACXBIWXMAAAsTAAALEwEAmpwYAAAElUlEQVR4nO2a2XqiMAyGXXUGsQq///OkLyiMtCe7pF+c5dy1aK0lvV4/0OfEQAAAAAAAAAAAAAAAAAAAOAr2mKzV3Qdq0HzS1vWdLJr5VPrvqq7d1Z7VNxuOZuqDVR7vU6RXL9t+TfqzEtx6JZ5yHvx1Wf7+l7+2mS9T4F3kqZ8Xr+z4xfvTFYufVOuXq8PS6tBfxu/0+Y6Yy5Ntf+PrulZz2mPf0XnI+m8tR+TLvX0p0r1JxFlfhNydfPy57Z/w7IvTq/lH6+P6sYkBflpz3Xl2DXpL9Pz9eNvjZ0uWdL2/aWpfrku91dV++R/GLtqL7lP5d6oW+7ruX+Xfd2jzuzD9T5X1yvlffl6aHvz/kZfg0esxd6kH5V36y0vh7/0z6zF+H3/pM/Ix/DP6p/1l9/Bv/f6V3A9P8w++oX9yfLXaf/b60MeVn7pU+qFe+qv/Zu3/NH+H9t/rP34/X2A0/33v6vfP7+V1/X+Fz1L/7P/2Tv/p3+kf9e/8Hf2v/G/w/9+0v7V7v6U+Xn6X9fj/9wAAAAAAAAAAAAAAAAAA4I/2Dtd3QG1I7qfgAAAABJRU5ErkJggg==" 
+             alt="Logo" class="logo">
+        <form id="searchForm">
+            <input type="text" id="query" placeholder="Search with Bing..." required>
+            <button type="submit">Search</button>
+        </form>
+    </div>
+    <script src="js/main.js"></script>
 </body>
 </html>

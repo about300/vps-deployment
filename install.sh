@@ -1,14 +1,14 @@
 #!/bin/bash
 # =================================================================
 # VPS 全栈一键部署脚本
-# 主页 + Subconverter静态前端 + s-ui + SSL + Nginx stream
+# Web主页 + Subconverter 前端 + s-ui + SSL + Nginx stream
 # 适配 Ubuntu 24.0
 # =================================================================
 
 set -e
 exec 2>&1
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[m'
 log() { echo -e "${GREEN}[$(date '+%H:%M:%S')] $1${NC}"; }
 warn() { echo -e "${YELLOW}[!] $1${NC}"; }
 error() { echo -e "${RED}[x] $1${NC}"; exit 1; }
@@ -40,28 +40,29 @@ if ! nginx -V 2>&1 | grep -q -- '--with-stream'; then
     error "当前 nginx 不包含 stream 模块，请安装 nginx-extras"
 fi
 
-# ==================== 第二阶段：前端部署 + Subconverter API 启动 ========
+# ==================== 第二阶段：Web主页 + Subconverter 前端 ====================
 log "====== 阶段2：Web前端 + Subconverter API ======"
 
 WORK_DIR="/opt/vps-deploy"
-mkdir -p "$WORK_DIR"
+mkdir -p "$WORK_DIR/web" "$WORK_DIR/web/sub" "$WORK_DIR/bin" "$WORK_DIR/config"
 
-# 复制静态网站文件
+# 下载主页
 log "复制 Web主页..."
-curl -sL "https://raw.githubusercontent.com/about300/vps-deployment/main/web/index.html" -o "$WORK_DIR/web/index.html"
+curl -m 20 -sSL "https://raw.githubusercontent.com/about300/vps-deployment/main/web/index.html" -o "$WORK_DIR/web/index.html" || error "下载 Web主页失败"
 
+# 下载 Subconverter 前端静态资源
 log "复制 Subconverter 前端静态资源..."
-mkdir -p "$WORK_DIR/web/sub"
-# CSS/JS/IMG 等全部按你仓库结构拉
-curl -sL "https://raw.githubusercontent.com/about300/vps-deployment/main/web/sub/index.html" -o "$WORK_DIR/web/sub/index.html"
-# 按需下载静态文件
-# 例如：
-curl -sL "https://raw.githubusercontent.com/about300/vps-deployment/main/web/sub/css/app.css" -o "$WORK_DIR/web/sub/css/app.css"
-curl -sL "https://raw.githubusercontent.com/about300/vps-deployment/main/web/sub/js/app.js" -o "$WORK_DIR/web/sub/js/app.js"
-# 若有 img 目录资源，类似下载
+curl -m 20 -sSL "https://raw.githubusercontent.com/about300/vps-deployment/main/web/sub/index.html" -o "$WORK_DIR/web/sub/index.html" || warn "sub/index.html 下载失败"
+mkdir -p "$WORK_DIR/web/sub/css" "$WORK_DIR/web/sub/js" "$WORK_DIR/web/sub/img"
+curl -m 20 -sSL "https://raw.githubusercontent.com/about300/vps-deployment/main/web/sub/css/app.css" -o "$WORK_DIR/web/sub/css/app.css" || warn "app.css 下载失败"
+curl -m 20 -sSL "https://raw.githubusercontent.com/about300/vps-deployment/main/web/sub/js/app.js" -o "$WORK_DIR/web/sub/js/app.js" || warn "app.js 下载失败"
+# 如果有图片资源，按需下载
+# curl -m 20 -sSL "https://raw.githubusercontent.com/about300/vps-deployment/main/web/sub/img/logo.png" -o "$WORK_DIR/web/sub/img/logo.png"
 
-# 下载 Subconverter API 二进制
-curl -sL "https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter" -o "$WORK_DIR/bin/subconverter"
+log "Web主页 + Subconverter 前端复制完成"
+
+# 下载 Subconverter API
+curl -m 20 -sSL "https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter" -o "$WORK_DIR/bin/subconverter"
 chmod +x "$WORK_DIR/bin/subconverter"
 
 cat > "$WORK_DIR/config/subconverter.pref.ini" <<EOF
@@ -71,7 +72,7 @@ api_access_token=
 managed_config_prefix=https://${MAIN_DOMAIN}/sub
 EOF
 
-# 后台启动 Subconverter API
+# 启动 Subconverter API
 cd "$WORK_DIR"
 ./bin/subconverter -c config/subconverter.pref.ini >/dev/null 2>&1 & disown
 log "Subconverter API 已后台启动: 127.0.0.1:25500"
@@ -93,7 +94,7 @@ acme.sh --install-cert -d "$MAIN_DOMAIN" --ecc \
     --key-file "$CERT_DIR/privkey.pem" \
     --fullchain-file "$CERT_DIR/fullchain.pem"
 
-# ==================== 第四阶段：Nginx 配置（Stream + HTTP） ====================
+# ==================== 第四阶段：Nginx 配置 ====================
 log "====== 阶段4：配置 Nginx ======"
 cat > /etc/nginx/nginx.conf <<EOF
 user www-data;
@@ -146,7 +147,7 @@ EOF
 
 nginx -t && systemctl restart nginx
 
-# ==================== 第五阶段：安装 官方 s-ui ========
+# ==================== 第五阶段：安装 官方 s-ui 面板 ====================
 log "====== 阶段5：安装 s-ui 面板 ======"
 curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh -o /tmp/s-ui-install.sh
 chmod +x /tmp/s-ui-install.sh
@@ -161,7 +162,7 @@ if [ -f "${SUI_DIR}/s-ui.conf" ]; then
 fi
 log "s-ui 面板监听端口: ${SUI_PORT}"
 
-# ==================== 完成通知 ====================
+# ==================== 完成 ====================
 clear
 echo -e "${CYAN}╔════════════════════════════════╗${NC}"
 echo -e "${CYAN}║         部署完成！           ║${NC}"

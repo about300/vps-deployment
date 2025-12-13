@@ -1,0 +1,28 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    background: #f7f7f7;
+}
+header {
+    background: #0078d4;
+    color: #fff;
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+header .btn {
+    color: #fff;
+    text-decoration: none;
+    padding: 8px 12px;
+    background: #005a9e;
+    border-radius: 4px;
+}
+.search-container {
+    text-align: center;
+    margin: 50px;
+}
+input, select {
+    padding: 8px;
+    margin-right: 8px;
+}

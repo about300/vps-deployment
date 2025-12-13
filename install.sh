@@ -1,7 +1,8 @@
 #!/bin/bash
 # =================================================================
 # VPS 全栈一键部署脚本 (Web首页 + s-ui + Subconverter + VLESS共用443)
-# Ubuntu 24.0，Subconverter 前端 ZIP 下载方式
+# 修正版：阶段2 Subconverter 不再阻塞
+# Ubuntu 24.0
 # =================================================================
 
 set -e
@@ -78,15 +79,17 @@ api_access_token=
 managed_config_prefix=https://${MAIN_DOMAIN}/sub
 EOF
 
-cd $WORK_DIR && nohup ./bin/subconverter -c config/subconverter.pref.ini >/dev/null 2>&1 &
-log "Subconverter API 启动在端口 25500"
+# 后台启动 Subconverter API，确保不阻塞
+cd $WORK_DIR
+./bin/subconverter -c config/subconverter.pref.ini >/dev/null 2>&1 & disown
+log "Subconverter API 已后台启动在端口 25500"
 
 # Subconverter 官方前端 (ZIP下载)
 log "====== 部署 Subconverter 官方前端 (ZIP 下载) ======"
 SUB_FRONTEND_DIR="$WORK_DIR/web/sub"
 mkdir -p $SUB_FRONTEND_DIR
 curl -sL -o /tmp/sub_frontend.zip https://github.com/ACL4SSR/ACL4SSR-SubConverter-Frontend/archive/gh-pages.zip
-unzip -o /tmp/sub_frontend.zip -d /tmp/
+unzip -o -q /tmp/sub_frontend.zip -d /tmp/
 mv /tmp/ACL4SSR-SubConverter-Frontend-gh-pages/* $SUB_FRONTEND_DIR/
 rm -rf /tmp/ACL4SSR-SubConverter-Frontend-gh-pages /tmp/sub_frontend.zip
 log "Subconverter 前端部署完成：$SUB_FRONTEND_DIR"

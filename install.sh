@@ -1,6 +1,7 @@
 #!/bin/bash
 # =================================================================
 # VPS 全栈一键部署脚本 (Nginx + s-ui + Web + Subconverter + AdGuard Home)
+# 不使用子域名，统一主域名 443 端口分流
 # 适配 Ubuntu 24 minimal/stream
 # =================================================================
 
@@ -21,14 +22,11 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 
 read -p "1. 请输入主域名 (例如: example.com): " MAIN_DOMAIN
-read -p "2. 请输入SNI子域名 [默认: proxy.${MAIN_DOMAIN}]: " PROXY_SNI
-PROXY_SNI=${PROXY_SNI:-"proxy.${MAIN_DOMAIN}"}
-read -p "3. 请输入邮箱 (用于申请SSL证书): " CERT_EMAIL
+read -p "2. 请输入邮箱 (用于申请SSL证书): " CERT_EMAIL
 
 echo ""
 log "配置摘要："
 echo "  - 主域名: $MAIN_DOMAIN"
-echo "  - 代理SNI域名: $PROXY_SNI"
 echo "  - 证书邮箱: $CERT_EMAIL"
 echo ""
 warn "脚本将彻底清理系统可能存在的旧版Nginx并安装依赖。"
@@ -42,8 +40,8 @@ sudo add-apt-repository universe
 sudo apt update
 sudo apt install -y nginx-extras unzip curl wget git socat lsof jq ufw software-properties-common
 
-# ==================== 阶段1：Nginx SSL 及 Web目录 ====================
-log "====== 阶段1：创建 Web 目录和申请 SSL ======"
+# ==================== 阶段1：Web目录创建 ====================
+log "====== 阶段1：创建 Web 目录 ======"
 WORK_DIR="/opt/vps-deploy"
 mkdir -p $WORK_DIR/{web,sub,bin,config}
 chown -R www-data:www-data $WORK_DIR
@@ -79,7 +77,7 @@ ln -sf /root/.acme.sh/acme.sh /usr/local/bin/acme.sh
 
 CERT_DIR="/etc/ssl/private/${MAIN_DOMAIN}"
 mkdir -p $CERT_DIR
-acme.sh --issue -d "$MAIN_DOMAIN" -d "$PROXY_SNI" --standalone --keylength ec-256
+acme.sh --issue -d "$MAIN_DOMAIN" --standalone --keylength ec-256
 acme.sh --install-cert -d "$MAIN_DOMAIN" --ecc \
     --key-file $CERT_DIR/privkey.pem \
     --fullchain-file $CERT_DIR/fullchain.pem
@@ -97,11 +95,8 @@ events { worker_connections 768; }
 
 stream {
     map \$ssl_preread_server_name \$backend {
-        ${MAIN_DOMAIN} web_backend;
-        ${PROXY_SNI} xray_backend;
-        default web_backend;
+        default xray_backend;  # 所有 443 流量默认走 VLESS/Reality
     }
-    upstream web_backend { server 127.0.0.1:5443; }
     upstream xray_backend { server 127.0.0.1:${XRAY_PORT}; }
     server {
         listen 443 reuseport;
@@ -127,7 +122,7 @@ http {
 
     server {
         listen 80;
-        server_name ${MAIN_DOMAIN} ${PROXY_SNI};
+        server_name ${MAIN_DOMAIN};
         location /.well-known/acme-challenge/ { root /var/www/html; }
         location / { return 301 https://\$server_name\$request_uri; }
     }

@@ -43,10 +43,13 @@ WEB_DIR="$WORK_DIR/web"
 SUB_DIR="$WEB_DIR/sub"
 mkdir -p $WEB_DIR $SUB_DIR
 
-# 拉取你的仓库 Web 内容
+# 拉取你的仓库 Web 内容到临时目录，然后复制到工作目录
+TMP_DIR=$(mktemp -d)
 log "下载 Web 前端内容..."
-git clone --depth=1 https://github.com/about300/vps-deployment.git $WORK_DIR
-cp -r $WORK_DIR/web/* $WEB_DIR/
+git clone --depth=1 https://github.com/about300/vps-deployment.git $TMP_DIR
+cp -r $TMP_DIR/web/* $WEB_DIR/
+cp -r $TMP_DIR/web/sub/* $SUB_DIR/
+rm -rf $TMP_DIR
 
 # ==================== 阶段3：申请 SSL 证书 ====================
 log "====== 阶段3：申请 SSL ======"

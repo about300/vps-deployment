@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
 set -e
 
-### ====== 基本变量 ======
-DOMAIN="friend.mycloudshare.org"
+############################################
+# VPS All-in-One Deploy Script (Safe)
+# Ubuntu 20.04 / 22.04 / 24.04
+############################################
+
+### ====== 用户输入 ======
+read -rp "请输入绑定到本机的域名 (例如 friend.example.com): " DOMAIN
+read -rp "请输入 Cloudflare Email: " CF_Email
+read -rp "请输入 Cloudflare Global API Key: " CF_Key
+
+export CF_Email
+export CF_Key
+
 INSTALL_DIR="/opt"
 SUBCONVERTER_PORT="25500"
 
+############################################
+echo
 echo "==============================="
-echo " SubConverter 一键部署脚本"
+echo " 开始部署"
 echo " 域名: $DOMAIN"
 echo "==============================="
+echo
 
-### ====== 系统依赖 ======
-echo "[1/8] 安装基础依赖..."
+### ====== 基础依赖 ======
+echo "[1/8] 安装系统依赖..."
 apt update -y
 apt install -y \
   curl wget git nginx socat cron \
@@ -20,8 +34,10 @@ apt install -y \
 
 ### ====== 防火墙 ======
 echo "[2/8] 配置防火墙..."
+ufw allow 22
 ufw allow 443
-ufw allow ssh
+ufw allow 8443
+ufw allow 8445
 ufw --force enable
 
 ### ====== acme.sh ======
@@ -29,16 +45,10 @@ echo "[3/8] 安装 acme.sh..."
 curl https://get.acme.sh | sh
 source ~/.bashrc
 
-read -rp "请输入 Cloudflare Global API Key: " CF_Key
-read -rp "请输入 Cloudflare Email: " CF_Email
-
-export CF_Key
-export CF_Email
-
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
-### ====== 申请证书（DNS API） ======
-echo "[4/8] 申请 SSL 证书（DNS API）..."
+### ====== 申请证书（DNS API，不占用端口） ======
+echo "[4/8] 申请 SSL 证书（Cloudflare DNS API）..."
 ~/.acme.sh/acme.sh --issue \
   --dns dns_cf \
   -d "$DOMAIN" \
@@ -52,12 +62,13 @@ echo "[4/8] 申请 SSL 证书（DNS API）..."
 
 ### ====== subconverter ======
 echo "[5/8] 安装 subconverter..."
-cd $INSTALL_DIR
+cd "$INSTALL_DIR"
 rm -rf subconverter
 git clone https://github.com/tindy2013/subconverter.git
 cd subconverter
 
 chmod +x subconverter
+
 cat > config.ini <<EOF
 [common]
 listen=0.0.0.0
@@ -84,14 +95,15 @@ systemctl daemon-reload
 systemctl enable subconverter
 systemctl restart subconverter
 
-### ====== sub-web ======
+### ====== sub-web 前端 ======
 echo "[6/8] 构建 sub-web 前端..."
-cd $INSTALL_DIR
+cd "$INSTALL_DIR"
 rm -rf sub-web
 git clone https://github.com/youshandefeiyang/sub-web-modify sub-web
 cd sub-web
 
 npm install
+
 cat > vue.config.js <<EOF
 module.exports = {
   publicPath: '/sub/'
@@ -143,10 +155,16 @@ EOF
 nginx -t
 systemctl reload nginx
 
-### ====== 完成 ======
-echo "==============================="
-echo " 🎉 安装完成！"
-echo " 主页: https://$DOMAIN/"
-echo " Sub:  https://$DOMAIN/sub/"
-echo " API:  https://$DOMAIN/sub/api/version"
-echo "==============================="
+############################################
+clear
+echo -e "╔════════════════════════════════╗"
+echo -e "║         部署完成！             ║"
+echo -e "╚════════════════════════════════╝"
+echo
+echo "Web 主页:      https://$DOMAIN/"
+echo "订阅转换:      https://$DOMAIN/sub/"
+echo "API 测试:      https://$DOMAIN/sub/api/version"
+echo "证书路径:      /root/server.crt"
+echo
+echo "已开放端口: 22, 443, 8443, 8445"
+echo

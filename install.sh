@@ -1,164 +1,153 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
 
-# ==================== 样式 ====================
-CYAN="\033[36m"
-YELLOW="\033[33m"
-NC="\033[0m"
+# ====== 用户配置区 ======
+# 修改为你的主域名（不带 https://），如 example.org
+DOMAIN="example.org"
 
-log() { echo -e "${CYAN}[INFO] $1${NC}"; }
-warn() { echo -e "${YELLOW}[WARN] $1${NC}"; }
+# Cloudflare API 令牌，需填写（仅限 DNS 级 token）
+CLOUDFLARE_API_TOKEN="你的_Cloudflare_API_Token"  # <-- 填写 Cloudflare API Token
+export CF_Token="${CLOUDFLARE_API_TOKEN}"
+# 若需要，可填写 Cloudflare 账号 ID（可留空）
+export CF_Account_ID=""
 
-# ==================== 开头页（不要动） ====================
-clear
-echo -e "${CYAN}╔════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║     VPS 全栈部署脚本 - Ubuntu     ║${NC}"
-echo -e "${CYAN}╚════════════════════════════════════╝${NC}"
-echo ""
+# =======================
 
-read -rp "请输入主域名 (example.com): " MAIN_DOMAIN
-read -rp "请输入 Cloudflare API Token: " CF_Token
-read -rp "请输入 Cloudflare 注册邮箱: " CF_Email
-read -rp "请输入 SSL 通知邮箱 (Let's Encrypt): " CERT_EMAIL
-
-echo ""
-log "配置摘要："
-echo "  - 域名: $MAIN_DOMAIN"
-echo "  - 使用 Cloudflare DNS API"
-echo ""
-
-read -rp "按 Enter 开始部署 (Ctrl+C 取消)..." dummy
-
-# ==================== 基础环境 ====================
-log "安装基础依赖"
-apt update -y
-apt install -y \
-  nginx git curl wget unzip cron socat ufw \
-  nodejs npm yarn
-
-# ==================== 防火墙 ====================
-log "配置防火墙"
-ufw --force reset
-ufw allow 22
-ufw allow 80
-ufw allow 443
-ufw allow 8443
-ufw --force enable
-
-# ==================== acme.sh（DNS 模式） ====================
-log "安装 acme.sh"
-curl -s https://get.acme.sh | sh -s email="$CERT_EMAIL"
-source ~/.bashrc
-
-export CF_Token
-export CF_Email
-
-~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-
-log "申请 ECC 证书（DNS 验证，不占端口）"
-~/.acme.sh/acme.sh --issue \
-  --dns dns_cf \
-  -d "$MAIN_DOMAIN" \
-  --keylength ec-256
-
-log "安装证书到 /root"
-~/.acme.sh/acme.sh --install-cert -d "$MAIN_DOMAIN" --ecc \
-  --key-file       /root/server.key \
-  --fullchain-file /root/server.crt \
-  --reloadcmd     "systemctl reload nginx"
-
-# ==================== Web 主站 ====================
-log "部署 Web 主站"
-rm -rf /opt/vps-deploy
-git clone https://github.com/about300/vps-deployment.git /opt/vps-deploy
-
-# ==================== subconverter ====================
-log "部署 subconverter"
-mkdir -p /opt/subconverter
-cd /opt/subconverter
-
-if [ ! -f subconverter ]; then
-  wget -O subconverter https://github.com/tindy2013/subconverter/releases/latest/download/subconverter_linux64
-  chmod +x subconverter
+# 检查是否以 root 用户运行
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请以 root 权限运行此脚本"
+  exit 1
 fi
 
-pkill subconverter || true
-nohup ./subconverter >/var/log/subconverter.log 2>&1 &
+# 更新系统并安装基础依赖
+apt update
+apt install -y nginx git curl wget ufw unzip software-properties-common
 
-# ==================== sub-web（自动构建） ====================
-log "部署 sub-web 前端"
-rm -rf /opt/sub-web
-git clone https://github.com/youshandefeiyang/sub-web-modify.git /opt/sub-web
+# 安装 Node.js（用于构建 Vue 前端）
+if ! command -v node >/dev/null 2>&1; then
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+    apt install -y nodejs
+fi
 
-cd /opt/sub-web
+# 设置防火墙（UFW）：允许 SSH(22)、HTTP(80)、HTTPS(443)、s-ui(2095)、AdGuard(3000) 等端口
+ufw allow 22,80,443,2095,3000/tcp
+ufw --force enable
 
-log "修正 publicPath 为 /sub/"
-cat > vue.config.js <<EOF
-module.exports = {
-  publicPath: '/sub/',
-  outputDir: 'dist'
-}
+# ===== 主站 Web UI 设置 =====
+mkdir -p /var/www/html
+cat > /var/www/html/index.html <<'EOF'
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>主站首页</title></head>
+<body>
+  <h1>欢迎访问主站</h1>
+  <p><a href="/sub/">进入订阅转换</a></p>
+  <p><a href="https://example.org:2095/" target="_blank">s-ui 面板</a> | 
+     <a href="https://example.org:3000/" target="_blank">AdGuard Home</a></p>
+</body>
+</html>
 EOF
+# 这里的 example.org 应替换为实际域名
 
-log "安装依赖并构建"
-yarn install
-yarn build
+# ==== 部署 SubConverter 后端 ====
+mkdir -p /opt
+echo "下载 SubConverter 二进制文件..."
+wget -O /opt/subconverter https://raw.githubusercontent.com/about300/vps-deployment/refs/heads/main/bin/subconverter
+chmod +x /opt/subconverter
 
-# ==================== nginx ====================
-log "配置 nginx"
+# 创建 systemd 服务
+cat > /etc/systemd/system/subconverter.service <<'EOF'
+[Unit]
+Description=SubConverter Service
+After=network.target
 
-cat >/etc/nginx/sites-available/default <<EOF
+[Service]
+Type=simple
+ExecStart=/opt/subconverter -s 127.0.0.1:25500
+Restart=always
+User=nobody
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now subconverter.service
+
+# ==== 部署 SubConverter 前端 (sub-web) ====
+echo "克隆并构建 Sub-web 前端..."
+git clone https://github.com/Marcus0605/Sub-web.git /opt/sub-web
+cd /opt/sub-web
+npm install
+npm run build
+# 假设构建后文件位于 /opt/sub-web/dist
+
+# ==== 安装并配置 SSL 证书（acme.sh + Cloudflare DNS） ====
+echo "安装 acme.sh 并请求 SSL 证书..."
+curl https://get.acme.sh | sh
+export CF_Token="${CLOUDFLARE_API_TOKEN}"
+export CF_Account_ID="${CF_Account_ID}"
+# 签发证书（DNS 验证）。这里仅示例含两域名：主域 + www 子域
+~/.acme.sh/acme.sh --issue --dns dns_cf -d "${DOMAIN}" -d "www.${DOMAIN}" --keylength ec-256
+mkdir -p /etc/nginx/ssl
+~/.acme.sh/acme.sh --install-cert --domain "${DOMAIN}" \
+    --key-file       /etc/nginx/ssl/${DOMAIN}.key    \
+    --fullchain-file /etc/nginx/ssl/${DOMAIN}.crt   \
+    --reloadcmd     "systemctl reload nginx"
+
+# ==== Nginx 配置 ====
+echo "配置 Nginx..."
+# 备份默认配置
+mv /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/default.bak >/dev/null 2>&1 || true
+
+cat > /etc/nginx/sites-available/${DOMAIN}.conf <<EOF
 server {
     listen 80;
-    server_name $MAIN_DOMAIN;
-    return 301 https://\$host\$request_uri;
-}
-
-server {
     listen 443 ssl http2;
-    server_name $MAIN_DOMAIN;
+    server_name ${DOMAIN} www.${DOMAIN};
 
-    ssl_certificate     /root/server.crt;
-    ssl_certificate_key /root/server.key;
+    ssl_certificate     /etc/nginx/ssl/${DOMAIN}.crt;
+    ssl_certificate_key /etc/nginx/ssl/${DOMAIN}.key;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
 
-    root /opt/vps-deploy/web;
-    index index.html;
+    # 主站页面
+    root /var/www/html;
+    index index.html index.htm;
 
-    location / {
-        try_files \$uri \$uri/ /index.html;
-    }
-
-    location /sub/ {
-        root /opt/sub-web/dist;
+    # SubConverter 前端 (Vue) 静态托管
+    location ^~ /sub/ {
+        alias /opt/sub-web/dist/;
         index index.html;
-        try_files \$uri \$uri/ /index.html;
+        try_files \$uri \$uri/ /sub/index.html;
     }
-
-    location /sub/api/ {
+    # SubConverter 后端代理
+    location /sub {
         proxy_pass http://127.0.0.1:25500/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
 }
 EOF
 
+ln -sf /etc/nginx/sites-available/${DOMAIN}.conf /etc/nginx/sites-enabled/
+
+# 检查 Nginx 配置并重启
 nginx -t
-systemctl restart nginx
+systemctl reload nginx
 
-# ==================== s-ui（官方） ====================
-log "安装 s-ui（官方脚本）"
-bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+# ==== 安装 AdGuard Home（可选） ====
+echo "安装 AdGuard Home..."
+AGH_URL=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest | grep browser_download_url | grep Linux_amd64 | cut -d '"' -f4)
+wget -O /tmp/AdGuardHome.tar.gz "$AGH_URL"
+tar xzf /tmp/AdGuardHome.tar.gz -C /opt
+cd /opt/AdGuardHome*
+./AdGuardHome -s install
+systemctl enable adguardhome.service
+systemctl start adguardhome.service
 
-# ==================== 完成页（不要动） ====================
-clear
-echo -e "${CYAN}╔════════════════════════════════╗${NC}"
-echo -e "${CYAN}║         部署完成！           ║${NC}"
-echo -e "${CYAN}╚════════════════════════════════╝${NC}"
-echo ""
-echo "Web主页:      https://$MAIN_DOMAIN"
-echo "订阅转换:      https://$MAIN_DOMAIN/sub/"
-echo "s-ui 管理面板: https://$MAIN_DOMAIN/app"
-echo "证书路径:      /root/server.crt /root/server.key"
-echo ""
-echo -e "${YELLOW}已开启防火墙，允许端口: 22, 80, 443, 8443${NC}"
+echo "部署完成！请通过 https://${DOMAIN} 访问主站，并访问 https://${DOMAIN}/sub/ 进行订阅转换。"

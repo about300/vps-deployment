@@ -1,153 +1,132 @@
 #!/bin/bash
+
 set -e
 
-# ====== 用户配置区 ======
-# 修改为你的主域名（不带 https://），如 example.org
-DOMAIN="example.org"
+# ========== 用户变量设置区域 ==========
 
-# Cloudflare API 令牌，需填写（仅限 DNS 级 token）
-CLOUDFLARE_API_TOKEN="你的_Cloudflare_API_Token"  # <-- 填写 Cloudflare API Token
-export CF_Token="${CLOUDFLARE_API_TOKEN}"
-# 若需要，可填写 Cloudflare 账号 ID（可留空）
-export CF_Account_ID=""
+# 您的域名（填写用于 SSL 证书的域名）
+DOMAIN="YOUR_DOMAIN"
 
-# =======================
+# Cloudflare API 凭证（请自行替换为您的 Global API Key 和对应邮箱）
+CF_Key="CLOUDFLARE_API_KEY"
+CF_Email="CLOUDFLARE_EMAIL"
 
-# 检查是否以 root 用户运行
-if [ "$(id -u)" -ne 0 ]; then
-  echo "请以 root 权限运行此脚本"
-  exit 1
-fi
+# =====================================
 
-# 更新系统并安装基础依赖
-apt update
-apt install -y nginx git curl wget ufw unzip software-properties-common
+# 更新并安装基础软件
+apt-get update
+apt-get install -y nginx git curl wget unzip ufw nodejs npm build-essential
 
-# 安装 Node.js（用于构建 Vue 前端）
-if ! command -v node >/dev/null 2>&1; then
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-    apt install -y nodejs
-fi
+# 1. 释放 53 端口（关闭 systemd-resolved 的 stub）
+echo -e "[Resolve]\nDNS=127.0.0.1\nDNSStubListener=no" > /etc/systemd/resolved.conf.d/adguardhome.conf
+mv /etc/resolv.conf /etc/resolv.conf.backup
+ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+systemctl restart systemd-resolved
 
-# 设置防火墙（UFW）：允许 SSH(22)、HTTP(80)、HTTPS(443)、s-ui(2095)、AdGuard(3000) 等端口
-ufw allow 22,80,443,2095,3000/tcp
-ufw --force enable
+# 2. 安装 acme.sh 并申请证书（DNS-01 via Cloudflare）
+curl https://get.acme.sh | sh
+export CF_Key CF_Email
+export CF_Email="$CF_Email"
+export CF_Key="$CF_Key"
+~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN"
+~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+    --key-file /root/server.key --fullchain-file /root/server.crt
 
-# ===== 主站 Web UI 设置 =====
-mkdir -p /var/www/html
-cat > /var/www/html/index.html <<'EOF'
-<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><title>主站首页</title></head>
-<body>
-  <h1>欢迎访问主站</h1>
-  <p><a href="/sub/">进入订阅转换</a></p>
-  <p><a href="https://example.org:2095/" target="_blank">s-ui 面板</a> | 
-     <a href="https://example.org:3000/" target="_blank">AdGuard Home</a></p>
-</body>
-</html>
+# 3. 安装并配置 nginx
+cat > /etc/nginx/sites-available/default <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+    ssl_certificate /root/server.crt;
+    ssl_certificate_key /root/server.key;
+
+    root /var/www/html;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location /sub/ {
+        alias /var/www/sub-web/;
+        try_files \$uri \$uri/ /sub/index.html;
+    }
+
+    # 静态资源：可以根据需要配置 /assets, /js, /css 等路径
+    location /assets/ { alias /var/www/sub-web/assets/; }
+}
 EOF
-# 这里的 example.org 应替换为实际域名
+mkdir -p /var/www/html
+echo "<html><body><h1>欢迎使用主站首页</h1><p><a href=\"/sub/\">订阅转换 UI</a></p></body></html>" > /var/www/html/index.html
+systemctl reload nginx
 
-# ==== 部署 SubConverter 后端 ====
-mkdir -p /opt
-echo "下载 SubConverter 二进制文件..."
-wget -O /opt/subconverter https://raw.githubusercontent.com/about300/vps-deployment/refs/heads/main/bin/subconverter
-chmod +x /opt/subconverter
-
+# 4. 部署 Subconverter 后端 (端口25500)
+mkdir -p /opt/subconverter
+curl -L https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter -o /opt/subconverter/subconverter
+chmod +x /opt/subconverter/subconverter
+# 下载默认配置模板
+mkdir -p /etc/subconverter
+curl -L https://raw.githubusercontent.com/about300/ACL4SSR/master/Clash/config/Online_Full_github.ini -o /etc/subconverter/template.ini
 # 创建 systemd 服务
-cat > /etc/systemd/system/subconverter.service <<'EOF'
+cat > /etc/systemd/system/subconverter.service <<EOF
 [Unit]
-Description=SubConverter Service
+Description=Subconverter Subscription Converter API
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/subconverter -s 127.0.0.1:25500
+ExecStart=/opt/subconverter/subconverter
+WorkingDirectory=/opt/subconverter
 Restart=always
-User=nobody
-AmbientCapabilities=CAP_NET_BIND_SERVICE
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable --now subconverter.service
+systemctl enable --now subconverter
 
-# ==== 部署 SubConverter 前端 (sub-web) ====
-echo "克隆并构建 Sub-web 前端..."
-git clone https://github.com/Marcus0605/Sub-web.git /opt/sub-web
+# 5. 构建并部署 sub-web 前端
+git clone https://github.com/CareyWang/sub-web.git /opt/sub-web
 cd /opt/sub-web
 npm install
+# 设置前端默认的 Subconverter 后端地址
+export VUE_APP_SUBCONVERTER_DEFAULT_BACKEND="http://127.0.0.1:25500"
 npm run build
-# 假设构建后文件位于 /opt/sub-web/dist
+# 将构建产物部署到 Nginx 指定目录
+rm -rf /var/www/sub-web
+mkdir -p /var/www/sub-web
+cp -r dist/* /var/www/sub-web/
 
-# ==== 安装并配置 SSL 证书（acme.sh + Cloudflare DNS） ====
-echo "安装 acme.sh 并请求 SSL 证书..."
-curl https://get.acme.sh | sh
-export CF_Token="${CLOUDFLARE_API_TOKEN}"
-export CF_Account_ID="${CF_Account_ID}"
-# 签发证书（DNS 验证）。这里仅示例含两域名：主域 + www 子域
-~/.acme.sh/acme.sh --issue --dns dns_cf -d "${DOMAIN}" -d "www.${DOMAIN}" --keylength ec-256
-mkdir -p /etc/nginx/ssl
-~/.acme.sh/acme.sh --install-cert --domain "${DOMAIN}" \
-    --key-file       /etc/nginx/ssl/${DOMAIN}.key    \
-    --fullchain-file /etc/nginx/ssl/${DOMAIN}.crt   \
-    --reloadcmd     "systemctl reload nginx"
+# 6. 安装 S-UI 面板（默认监听2095端口）:contentReference[oaicite:6]{index=6}
+bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-# ==== Nginx 配置 ====
-echo "配置 Nginx..."
-# 备份默认配置
-mv /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/default.bak >/dev/null 2>&1 || true
-
-cat > /etc/nginx/sites-available/${DOMAIN}.conf <<EOF
-server {
-    listen 80;
-    listen 443 ssl http2;
-    server_name ${DOMAIN} www.${DOMAIN};
-
-    ssl_certificate     /etc/nginx/ssl/${DOMAIN}.crt;
-    ssl_certificate_key /etc/nginx/ssl/${DOMAIN}.key;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_tickets off;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    # 主站页面
-    root /var/www/html;
-    index index.html index.htm;
-
-    # SubConverter 前端 (Vue) 静态托管
-    location ^~ /sub/ {
-        alias /opt/sub-web/dist/;
-        index index.html;
-        try_files \$uri \$uri/ /sub/index.html;
-    }
-    # SubConverter 后端代理
-    location /sub {
-        proxy_pass http://127.0.0.1:25500/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-    }
-}
-EOF
-
-ln -sf /etc/nginx/sites-available/${DOMAIN}.conf /etc/nginx/sites-enabled/
-
-# 检查 Nginx 配置并重启
-nginx -t
-systemctl reload nginx
-
-# ==== 安装 AdGuard Home（可选） ====
-echo "安装 AdGuard Home..."
-AGH_URL=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest | grep browser_download_url | grep Linux_amd64 | cut -d '"' -f4)
-wget -O /tmp/AdGuardHome.tar.gz "$AGH_URL"
-tar xzf /tmp/AdGuardHome.tar.gz -C /opt
-cd /opt/AdGuardHome*
+# 7. 安装 AdGuardHome
+AGH_VER=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest | grep tag_name | cut -d '"' -f4)
+wget -O AdGuardHome_linux_amd64.tar.gz "https://github.com/AdguardTeam/AdGuardHome/releases/download/${AGH_VER}/AdGuardHome_linux_amd64.tar.gz"
+tar zxvf AdGuardHome_linux_amd64.tar.gz
+cd AdGuardHome
 ./AdGuardHome -s install
-systemctl enable adguardhome.service
-systemctl start adguardhome.service
 
-echo "部署完成！请通过 https://${DOMAIN} 访问主站，并访问 https://${DOMAIN}/sub/ 进行订阅转换。"
+# 8. 配置防火墙 (允许 TCP+UDP)
+ufw allow 22/tcp
+ufw allow 22/udp
+ufw allow 53/tcp
+ufw allow 53/udp
+ufw allow 80/tcp
+ufw allow 80/udp
+ufw allow 443/tcp
+ufw allow 443/udp
+ufw allow 2095/tcp
+ufw allow 2095/udp
+ufw allow 25500/tcp
+ufw allow 25500/udp
+ufw --force enable
+
+echo "部署完成！"

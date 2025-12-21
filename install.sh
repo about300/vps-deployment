@@ -3,7 +3,7 @@ set -e
 
 echo "======================================"
 echo " 一键部署 SubConverter + sub-web-modify"
-echo " 使用 ZeroSSL SSL 证书（无重复证书限制）"
+echo " 使用 Let’s Encrypt 证书（优先自动续期）"
 echo "======================================"
 
 read -rp "请输入你的域名（如 girl.example.com）: " DOMAIN
@@ -26,47 +26,44 @@ ufw --force enable
 
 echo "[INFO] 安装 acme.sh"
 curl https://get.acme.sh | sh
-# 使用 acme.sh 的完整路径以避免脚本找不到命令
-ACME_SH_PATH="$HOME/.acme.sh/acme.sh"
+ACME_SH="$HOME/.acme.sh/acme.sh"
 
-echo "[INFO] 设置默认 CA 为 ZeroSSL（可多次调用）"
-"$ACME_SH_PATH" --set-default-ca --server zerossl
-
-echo "[INFO] 申请 ZeroSSL 证书"
-"$ACME_SH_PATH" --issue \
-  --dns dns_cf \
-  -d "$DOMAIN" \
-  --keylength ec-256 \
-  --server zerossl
+# 让 acme.sh 使用 Let’s Encrypt CA
+"$ACME_SH" --set-default-ca --server letsencrypt
 
 CERT_DIR="/etc/nginx/ssl/$DOMAIN"
 mkdir -p "$CERT_DIR"
 
-echo "[INFO] 安装证书到 Nginx"
-"$ACME_SH_PATH" --install-cert -d "$DOMAIN" \
+# —— 优先续期已有证书
+echo "[INFO] 尝试续期已有证书"
+if "$ACME_SH" --renew -d "$DOMAIN" --force; then
+    echo "[OK] 证书续期成功或已有有效证书"
+else
+    echo "[WARN] 续期失败或没有旧证书，申请新证书"
+    "$ACME_SH" --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
+fi
+
+echo "[INFO] 安装/更新证书到 Nginx"
+"$ACME_SH" --install-cert -d "$DOMAIN" \
   --key-file "$CERT_DIR/key.pem" \
   --fullchain-file "$CERT_DIR/fullchain.pem" \
   --reloadcmd "systemctl reload nginx"
 
+# —— SubConverter 后端
 echo "[INFO] 部署 SubConverter 后端"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
-
-wget -O subconverter \
-  https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter
+wget -O subconverter https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter
 chmod +x subconverter
 
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
 Description=SubConverter Service
 After=network.target
-
 [Service]
 ExecStart=/opt/subconverter/subconverter
-WorkingDirectory=/opt/subconverter
 Restart=always
 RestartSec=3
-
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -75,8 +72,8 @@ systemctl daemon-reload
 systemctl enable subconverter
 systemctl restart subconverter
 
-echo "[INFO] 安装 Node.js 22（用于构建 sub-web-modify）"
-# 移除旧版本并安装 Node 22
+# —— 安装 Node 22 & 构建 sub-web-modify
+echo "[INFO] 安装 Node.js 22"
 apt remove -y nodejs
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs npm
@@ -86,7 +83,6 @@ rm -rf /opt/sub-web-modify
 git clone https://github.com/youshandefeiyang/sub-web-modify.git /opt/sub-web-modify
 cd /opt/sub-web-modify
 
-# 强制 publicPath 为 /sub/ 以兼容 Nginx alias
 cat >vue.config.js <<'EOF'
 module.exports = {
   publicPath: '/sub/'
@@ -96,6 +92,7 @@ EOF
 npm install
 npm run build
 
+# —— 主站 Search 首页
 echo "[INFO] 创建主站 Search 页面"
 mkdir -p /opt/vps-deploy
 cat >/opt/vps-deploy/index.html <<EOF
@@ -115,6 +112,7 @@ cat >/opt/vps-deploy/index.html <<EOF
 </html>
 EOF
 
+# —— Nginx 配置
 echo "[INFO] 写入 Nginx 配置"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
@@ -130,20 +128,17 @@ server {
     ssl_certificate     $CERT_DIR/fullchain.pem;
     ssl_certificate_key $CERT_DIR/key.pem;
 
-    # 主站 Search 页面
     location / {
         root /opt/vps-deploy;
         index index.html;
     }
 
-    # sub-web-modify 前端 UI
     location /sub/ {
         alias /opt/sub-web-modify/dist/;
         index index.html;
         try_files \$uri \$uri/ /sub/index.html;
     }
 
-    # SubConverter 后端 API 代理
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
         proxy_http_version 1.1;
@@ -161,8 +156,6 @@ nginx -t && systemctl reload nginx
 
 echo "======================================"
 echo "🎉 部署完成！"
-echo "主站 Search:      https://$DOMAIN"
-echo "订阅转换 UI:      https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
-echo "后端 API:        https://$DOMAIN/sub/api/"
-echo "AdGuard Home:    保留端口访问（如 http://$DOMAIN:3000）"
+echo "Search: https://$DOMAIN"
+echo "订阅转换 UI: https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
 echo "======================================"

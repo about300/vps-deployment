@@ -2,7 +2,8 @@
 set -e
 
 echo "======================================"
-echo " 一键部署 enhanced SubConverter UI"
+echo " 一键部署 SubConverter + sub‑web‑modify"
+echo " 使用 ZeroSSL 证书（无重复证书限制）"
 echo "======================================"
 
 read -rp "请输入你的域名: " DOMAIN
@@ -12,36 +13,51 @@ read -rp "请输入 Cloudflare API Token: " CF_TOKEN
 export CF_Email="$CF_EMAIL"
 export CF_Token="$CF_TOKEN"
 
+echo "[INFO] 更新系统 & 安装依赖"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
 
+echo "[INFO] 防火墙放行端口"
 ufw allow 22
 ufw allow 80
 ufw allow 443
 ufw allow 3000
 ufw --force enable
 
+echo "[INFO] 安装 acme.sh"
 curl https://get.acme.sh | sh
 source ~/.bashrc
-~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
+
+echo "[INFO] 设置默认 CA 为 ZeroSSL（acme.sh）"
+acme.sh --set-default-ca --server zerossl
+
+echo "[INFO] 申请 ZeroSSL 证书"
+acme.sh --issue \
+  --dns dns_cf \
+  -d "$DOMAIN" \
+  --keylength ec-256 \
+  --server zerossl
 
 CERT_DIR="/etc/nginx/ssl/$DOMAIN"
 mkdir -p "$CERT_DIR"
-~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" --ecc \
+
+echo "[INFO] 安装证书到 Nginx"
+acme.sh --install-cert -d "$DOMAIN" \
   --key-file "$CERT_DIR/key.pem" \
   --fullchain-file "$CERT_DIR/fullchain.pem" \
   --reloadcmd "systemctl reload nginx"
 
-# 后端
+echo "[INFO] 部署 SubConverter 后端"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
-wget -O subconverter https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter
+
+wget -O subconverter \
+  https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter
 chmod +x subconverter
 
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
-Description=SubConverter
+Description=SubConverter Service
 After=network.target
 [Service]
 ExecStart=/opt/subconverter/subconverter
@@ -55,14 +71,16 @@ systemctl daemon-reload
 systemctl enable subconverter
 systemctl restart subconverter
 
-# 前端 enhanced sub-web-modify
+echo "[INFO] 安装 Node.js（用于构建 sub‑web‑modify）"
+apt remove -y nodejs
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs npm
-cd /opt
-rm -rf sub-web-modify
-git clone https://github.com/youshandefeiyang/sub-web-modify.git
-cd sub-web-modify
 
-# 给 publicPath
+echo "[INFO] 构建 sub‑web‑modify 前端"
+rm -rf /opt/sub-web-modify
+git clone https://github.com/youshandefeiyang/sub-web-modify.git /opt/sub-web-modify
+cd /opt/sub-web-modify
+
 cat >vue.config.js <<'EOF'
 module.exports = {
   publicPath: '/sub/'
@@ -102,7 +120,7 @@ server {
     listen 443 ssl http2;
     server_name $DOMAIN;
 
-    ssl_certificate $CERT_DIR/fullchain.pem;
+    ssl_certificate     $CERT_DIR/fullchain.pem;
     ssl_certificate_key $CERT_DIR/key.pem;
 
     location / {
@@ -131,4 +149,10 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl reload nginx
 
-echo "部署完成！访问 https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
+echo "======================================"
+echo "🎉 全部部署完成！"
+echo "访问 Search 首页: https://$DOMAIN"
+echo "订阅转换 UI: https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
+echo "后端 API: https://$DOMAIN/sub/api/"
+echo "AdGuard Home: 继续使用独立端口访问"
+echo "======================================"

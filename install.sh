@@ -4,8 +4,9 @@ set -e
 echo "======================================"
 echo " 一键部署 全栈服务"
 echo " - SubConverter + sub-web-modify"
-echo " - S-UI 面板（SSH 隧道访问）"
+echo " - S-UI 面板"
 echo " - AdGuard Home 3000端口"
+echo " - Reality 443端口 TLS (SNI 自行设置)"
 echo " - Let’s Encrypt DNS-01 自动获取证书"
 echo "======================================"
 
@@ -31,7 +32,7 @@ echo "[INFO] 安装 acme.sh 用于 Let’s Encrypt 证书"
 curl https://get.acme.sh | sh
 ACME_SH="$HOME/.acme.sh/acme.sh"
 
-echo "[INFO] 切换默认 CA 为 Let’s Encrypt"
+echo "[INFO] 切换默认 CA 为 Let's Encrypt"
 "$ACME_SH" --set-default-ca --server letsencrypt
 
 CERT_DIR="/etc/nginx/ssl/$DOMAIN"
@@ -44,7 +45,7 @@ else
   "$ACME_SH" --issue --dns dns_cf -d "$DOMAIN"
 fi
 
-echo "[INFO] 安装 SSL 到 Nginx"
+echo "[INFO] 安装证书到 nginx"
 "$ACME_SH" --install-cert -d "$DOMAIN" \
   --key-file "$CERT_DIR/key.pem" \
   --fullchain-file "$CERT_DIR/fullchain.pem" \
@@ -76,27 +77,35 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 echo "[INFO] 构建 sub-web-modify 前端"
-cd /opt/vps-deployment/sub-web-modify
+SUBWEB_DIR="/opt/vps-deployment/sub-web-modify"
+if [ ! -d "$SUBWEB_DIR" ]; then
+  echo "[ERROR] $SUBWEB_DIR 不存在，请确认仓库已上传到该目录"
+  exit 1
+fi
 
 export NVM_DIR="$HOME/.nvm"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.6/install.sh | bash
 fi
-source "$NVM_DIR/nvm.sh"
+# shellcheck source=/dev/null
+. "$NVM_DIR/nvm.sh"
+
 nvm install 22
 nvm use 22
 
-npm install
+cd "$SUBWEB_DIR"
+npm install --no-audit --no-fund
 npm run build
 
+# 复制构建产物到 /opt/sub-web-modify/dist
 rm -rf /opt/sub-web-modify/dist
 mkdir -p /opt/sub-web-modify/dist
 cp -r dist/* /opt/sub-web-modify/dist/
 
-echo "[INFO] 安装 S-UI 面板（通过 SSH 隧道访问，不暴露公网端口）"
+echo "[INFO] 安装 S-UI 面板（节点和 Reality 后续自行设置）"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-echo "[INFO] 写入 Nginx 配置"
+echo "[INFO] 写入 nginx 配置"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 80;
@@ -133,7 +142,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    # S-UI 面板（SSH 隧道访问）
+    # S-UI 面板（通过 SSH 隧道访问，无需公网暴露端口）
     location /ui/ {
         proxy_pass http://127.0.0.1:2095/app/;
         proxy_set_header Host \$host;
@@ -161,5 +170,5 @@ echo "======================================"
 echo "🎉 全部部署完成"
 echo "访问主站 Search: https://$DOMAIN"
 echo "订阅转换 UI:   https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
-echo "S-UI 面板（通过 SSH 隧道访问）: https://$DOMAIN/ui/"
+echo "S-UI 面板（SSH 隧道访问）: https://$DOMAIN/ui/"
 echo "======================================"

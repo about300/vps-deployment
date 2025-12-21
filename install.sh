@@ -1,107 +1,127 @@
 #!/usr/bin/env bash
 set -e
 
-echo "===== VPS ALL-IN-ONE INSTALL v2 ====="
+echo "======================================"
+echo " VPS 一键部署 V3（Ubuntu 24）"
+echo "======================================"
 
-# ========= 基础输入 =========
-read -rp "请输入主域名 (如 MOMAIN): " DOMAIN
-read -rp "请输入 Cloudflare API Token: " CF_Token
-read -rp "请输入 Cloudflare 注册邮箱: " CF_Email
+read -rp "请输入你的域名（如 girl.mycloudshare.org）: " DOMAIN
+read -rp "请输入 Cloudflare 注册邮箱: " CF_EMAIL
+read -rp "请输入 Cloudflare API Token: " CF_TOKEN
 
-INSTALL_ADGUARD="y"
+export CF_Email="$CF_EMAIL"
+export CF_Token="$CF_TOKEN"
 
-export CF_Token
-export CF_Email
-
-# ========= 基础环境 =========
+echo "[INFO] 更新系统 & 安装基础依赖"
 apt update -y
-apt install -y \
-  curl wget git nginx ufw socat cron \
-  nodejs npm
+apt install -y curl wget git unzip socat cron ufw nginx \
+  build-essential python3 python-is-python3
 
-# ========= 防火墙 =========
-ufw --force reset
-ufw default deny incoming
-ufw default allow outgoing
-
-for p in 22 443 2095 3000; do
-  ufw allow ${p}/tcp
-  ufw allow ${p}/udp
-done
-
+echo "[INFO] 防火墙放行端口"
+ufw allow 22
+ufw allow 80
+ufw allow 443
+ufw allow 3000
+ufw allow 2095
+ufw allow 1:65535/tcp
+ufw allow 1:65535/udp
 ufw --force enable
 
-# ========= acme.sh（DNS-01，不占 80） =========
-apt install -y acme.sh
-acme.sh --set-default-ca --server letsencrypt
+echo "[INFO] 安装 acme.sh"
+curl https://get.acme.sh | sh
+source ~/.bashrc
 
-acme.sh --issue \
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+
+echo "[INFO] 申请 SSL 证书"
+~/.acme.sh/acme.sh --issue \
   --dns dns_cf \
   -d "$DOMAIN" \
   --keylength ec-256
 
-mkdir -p /root/cert
-acme.sh --install-cert \
+CERT_DIR="/etc/nginx/ssl/$DOMAIN"
+mkdir -p "$CERT_DIR"
+
+~/.acme.sh/acme.sh --install-cert \
   -d "$DOMAIN" \
   --ecc \
-  --key-file       /root/cert/server.key \
-  --fullchain-file /root/cert/server.crt \
-  --reloadcmd "systemctl reload nginx"
+  --key-file       "$CERT_DIR/key.pem" \
+  --fullchain-file "$CERT_DIR/fullchain.pem" \
+  --reloadcmd     "systemctl reload nginx"
 
-# ========= Web 主站（Bing 风格） =========
-rm -rf /opt/vps-deploy
-git clone https://github.com/about300/vps-deployment.git /opt/vps-deploy
-
-chown -R www-data:www-data /opt/vps-deploy
-chmod -R 755 /opt/vps-deploy
-
-# ========= subconverter（about300） =========
+echo "[INFO] 部署 SubConverter（about300 版本）"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
-
 wget -O subconverter \
   https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
-
 chmod +x subconverter
 
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
-Description=Subconverter Service
+Description=SubConverter
 After=network.target
 
 [Service]
-Type=simple
 ExecStart=/opt/subconverter/subconverter
+WorkingDirectory=/opt/subconverter
 Restart=always
-User=root
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reexec
 systemctl daemon-reload
-systemctl enable --now subconverter
+systemctl enable subconverter
+systemctl restart subconverter
 
-# ========= sub-web（careywang） =========
+echo "[INFO] 安装 Node.js 16（避免 node-sass 错误）"
+curl -fsSL https://deb.nodesource.com/setup_16.x | bash -
+apt install -y nodejs
+
+echo "[INFO] 构建 Sub-Web（careywang/sub-web）"
 rm -rf /opt/sub-web
 git clone https://github.com/careywang/sub-web.git /opt/sub-web
 cd /opt/sub-web
 
-npm install --legacy-peer-deps
+npm install
 npm run build
 
-chown -R www-data:www-data /opt/sub-web
-chmod -R 755 /opt/sub-web
+echo "[INFO] 准备主站搜索主页"
+mkdir -p /opt/vps-deploy
+cat >/opt/vps-deploy/index.html <<EOF
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Search</title>
+</head>
+<body style="text-align:center;margin-top:15%">
+<h2>Search</h2>
+<form action="https://www.bing.com/search" method="get">
+<input type="text" name="q" style="width:300px;height:30px">
+<br><br>
+<button type="submit">Search</button>
+</form>
+<br>
+<a href="/sub">订阅转换</a>
+</body>
+</html>
+EOF
 
-# ========= Nginx =========
-cat >/etc/nginx/sites-enabled/default <<EOF
+echo "[INFO] 写入 Nginx 配置"
+cat >/etc/nginx/sites-available/$DOMAIN <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
 server {
     listen 443 ssl http2;
-    server_name ${DOMAIN};
+    server_name $DOMAIN;
 
-    ssl_certificate     /root/cert/server.crt;
-    ssl_certificate_key /root/cert/server.key;
+    ssl_certificate     $CERT_DIR/fullchain.pem;
+    ssl_certificate_key $CERT_DIR/key.pem;
 
     root /opt/vps-deploy;
     index index.html;
@@ -120,26 +140,26 @@ server {
         proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
 }
 EOF
 
+ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+
 nginx -t
-systemctl restart nginx
+systemctl reload nginx
 
-# ========= s-ui =========
-bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+echo "[INFO] 安装 AdGuard Home"
+curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
 
-# ========= AdGuard Home =========
-if [[ "$INSTALL_ADGUARD" == "y" ]]; then
-  curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
-fi
-
-echo
-echo "===== 安装完成 ====="
-echo "主页: https://${DOMAIN}"
-echo "订阅转换: https://${DOMAIN}/sub"
-echo "Sub 后端: http://127.0.0.1:25500/version"
-echo "AdGuard Home: http://${DOMAIN}:3000"
-echo "s-ui 面板: http://${DOMAIN}:2095"
+echo "======================================"
+echo " 部署完成"
+echo "--------------------------------------"
+echo "主页: https://$DOMAIN"
+echo "订阅转换: https://$DOMAIN/sub"
+echo "Sub API: http://127.0.0.1:25500"
+echo "AdGuard Home: http://$DOMAIN:3000"
+echo "ACL4SSR 默认模板:"
+echo "https://raw.githubusercontent.com/about300/ACL4SSR/master/Clash/config/Online_Full_github.ini"
+echo "======================================"

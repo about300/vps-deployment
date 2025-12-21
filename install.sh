@@ -2,14 +2,14 @@
 set -e
 
 echo "======================================"
-echo " 一键部署 全栈服务"
-echo " - SubConverter + sub‑web‑modify"
-echo " - S‑UI 面板"
-echo " - AdGuard Home 3000 端口"
-echo " - SSL 使用 Let’s Encrypt DNS‑01 证书"
+echo " 一键部署 全栈服务（含 SPA 前端子路径修复）"
+echo " - SubConverter + sub-web-modify"
+echo " - S-UI 面板"
+echo " - AdGuard Home"
+echo " - SSL 使用 Let’s Encrypt DNS-01"
 echo "======================================"
 
-read -rp "请输入你的域名 (如 example.com): " DOMAIN
+read -rp "请输入你的域名（如 example.com）: " DOMAIN
 read -rp "请输入 Cloudflare 注册邮箱: " CF_EMAIL
 read -rp "请输入 Cloudflare API Token: " CF_TOKEN
 read -rp "请输入你的 sub-web-modify 仓库 HTTPS 地址: " SUBWEB_REPO
@@ -17,11 +17,11 @@ read -rp "请输入你的 sub-web-modify 仓库 HTTPS 地址: " SUBWEB_REPO
 export CF_Email="$CF_EMAIL"
 export CF_Token="$CF_TOKEN"
 
-echo "[INFO] 更新系统并安装依赖"
+echo "[INFO] 更新系统 & 安装依赖"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
 
-echo "[INFO] 配置防火墙"
+echo "[INFO] 放行必要端口"
 ufw allow 22
 ufw allow 80
 ufw allow 443
@@ -29,24 +29,24 @@ ufw allow 3000
 ufw allow 8445
 ufw --force enable
 
-echo "[INFO] 安装 acme.sh 用于 Let’s Encrypt 证书"
+echo "[INFO] 安装 acme.sh 申请 SSL 证书"
 curl https://get.acme.sh | sh
 ACME_SH="$HOME/.acme.sh/acme.sh"
 
-echo "[INFO] 设置默认 CA 为 Let’s Encrypt"
+echo "[INFO] 切换默认 CA 为 Let's Encrypt"
 "$ACME_SH" --set-default-ca --server letsencrypt
 
 CERT_DIR="/etc/nginx/ssl/$DOMAIN"
 mkdir -p "$CERT_DIR"
 
-echo "[INFO] 申请或续期 SSL 证书"
-if "$ACME_SH" --renew -d "$DOMAIN" --force >/dev/null 2>&1; then
-  echo "[OK] SSL 证书已存在或续期"
+echo "[INFO] 尝试续期或申请 SSL 证书"
+if "$ACME_SH" --renew -d "$DOMAIN" --force >/dev/null 2>&1 ; then
+  echo "[OK] SSL 证书已存在或续期成功"
 else
   "$ACME_SH" --issue --dns dns_cf -d "$DOMAIN"
 fi
 
-echo "[INFO] 安装证书到 Nginx"
+echo "[INFO] 安装证书到 nginx"
 "$ACME_SH" --install-cert -d "$DOMAIN" \
   --key-file "$CERT_DIR/key.pem" \
   --fullchain-file "$CERT_DIR/fullchain.pem" \
@@ -80,6 +80,13 @@ echo "[INFO] 克隆 sub-web-modify 前端源码"
 rm -rf /opt/sub-web-src
 git clone "$SUBWEB_REPO" /opt/sub-web-src
 
+echo "[INFO] 加入 publicPath 设置到源码"
+cat >/opt/sub-web-src/vue.config.js <<'EOF'
+module.exports = {
+  publicPath: "/sub/"
+};
+EOF
+
 echo "[INFO] 安装 Node.js 22 via nvm 并构建前端"
 export NVM_DIR="$HOME/.nvm"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
@@ -95,7 +102,7 @@ cd /opt/sub-web-src
 npm install --no-audit --no-fund
 npm run build
 
-echo "[INFO] 将构建产物复制到静态目录"
+echo "[INFO] 前端构建成功，将构建产物复制到 nginx 静态目录"
 rm -rf /opt/sub-web-modify/dist
 mkdir -p /opt/sub-web-modify/dist
 cp -r dist/* /opt/sub-web-modify/dist/
@@ -106,7 +113,7 @@ curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scrip
 echo "[INFO] 安装 S‑UI 面板（本机访问）"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-echo "[INFO] 写入 Nginx 配置"
+echo "[INFO] 写入 nginx 配置"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 80;
@@ -121,13 +128,13 @@ server {
     ssl_certificate     $CERT_DIR/fullchain.pem;
     ssl_certificate_key $CERT_DIR/key.pem;
 
-    # Search 页面
+    # Search 首页 (root)
     location / {
         root /opt/vps-deploy;
         index index.html;
     }
 
-    # 订阅转换 UI
+    # Vue SPA 前端部署 /sub/
     location /sub/ {
         alias /opt/sub-web-modify/dist/;
         index index.html;
@@ -165,16 +172,17 @@ EOF
 
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
+
 nginx -t && systemctl reload nginx
 
 echo "======================================"
-echo "部署成功 🎉"
+echo "部署完成 🎉"
 echo ""
-echo "• Search 首页: https://$DOMAIN"
-echo "• 订阅转换 UI: https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
-echo "• SubConverter API: https://$DOMAIN/sub/api/"
-echo "• S‑UI 面板 (SSH 隧道访问): https://$DOMAIN/ui/"
-echo "• 8445 端口预留可用于 DoH DNS 服务"
+echo "✔ Search 首页: https://$DOMAIN"
+echo "✔ 订阅转换 UI: https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
+echo "✔ SubConverter API: https://$DOMAIN/sub/api/"
+echo "✔ S‑UI 面板: 通过 SSH 隧道访问 127.0.0.1:2095"
+echo "✔ 8445 可用于 DoH 或自定义服务"
 echo ""
-echo "⚠ 请在 S‑UI 面板中自行添加 Reality / VLESS 节点并设置 TLS & SNI"
+echo "⚠ Reality 节点请在 S‑UI 面板设置 TLS & SNI"
 echo "======================================"

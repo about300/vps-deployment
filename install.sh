@@ -6,18 +6,20 @@ echo " 一键部署 SubConverter + sub-web-modify"
 echo " 使用 Let’s Encrypt 证书（Cloudflare DNS 自动验证）"
 echo "======================================"
 
-read -rp "请输入你的域名（如 example.com）: " DOMAIN
+# 1. 输入域名 + Cloudflare Token
+read -rp "请输入你的域名（如 girl.example.com）: " DOMAIN
 read -rp "请输入 Cloudflare 注册邮箱: " CF_EMAIL
 read -rp "请输入 Cloudflare API Token: " CF_TOKEN
 
+# 导出 Cloudflare API 环境变量
 export CF_Email="$CF_EMAIL"
 export CF_Token="$CF_TOKEN"
 
-echo "[INFO] 更新系统 & 安装依赖"
+echo "[INFO] 更新系统 & 安装基础依赖"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
 
-echo "[INFO] 配置防火墙"
+echo "[INFO] 防火墙设置"
 ufw allow 22
 ufw allow 80
 ufw allow 443
@@ -34,15 +36,16 @@ echo "[INFO] 切换默认 CA 到 Let’s Encrypt"
 CERT_DIR="/etc/nginx/ssl/$DOMAIN"
 mkdir -p "$CERT_DIR"
 
-echo "[INFO] 尝试续期已有证书"
+# 2. 优先尝试续期
+echo "[INFO] 尝试续期已有证书（如存在）"
 if "$ACME_SH" --renew -d "$DOMAIN" --force; then
-  echo "[INFO] 证书续期/存在有效证书"
+  echo "[OK] 续期/已有证书有效"
 else
-  echo "[INFO] 旧证书不存在或续期失败，申请新证书"
+  echo "[INFO] 没有旧证书或续期失败，申请新的证书"
   "$ACME_SH" --issue --dns dns_cf -d "$DOMAIN"
 fi
 
-echo "[INFO] 安装/更新证书到 Nginx"
+echo "[INFO] 安装证书到 Nginx"
 "$ACME_SH" --install-cert -d "$DOMAIN" \
   --key-file "$CERT_DIR/key.pem" \
   --fullchain-file "$CERT_DIR/fullchain.pem" \
@@ -63,6 +66,7 @@ After=network.target
 
 [Service]
 ExecStart=/opt/subconverter/subconverter
+WorkingDirectory=/opt/subconverter
 Restart=always
 RestartSec=3
 
@@ -74,10 +78,15 @@ systemctl daemon-reload
 systemctl enable subconverter
 systemctl restart subconverter
 
-echo "[INFO] 安装 Node.js 22"
-apt remove -y nodejs
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt install -y nodejs npm
+echo "[INFO] 安装 nvm 并构建前端"
+# 使用 NVM 安装 Node.js，避免 apt 的 nodejs/npm 依赖冲突
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.6/install.sh | bash
+export NVM_DIR="$HOME/.nvm"
+source "$HOME/.nvm/nvm.sh"
+
+nvm install 22
+nvm use 22
+echo "[INFO] Node.js 版本: $(node -v), npm 版本: $(npm -v)"
 
 echo "[INFO] 构建 sub-web-modify 前端"
 rm -rf /opt/sub-web-modify
@@ -93,7 +102,7 @@ EOF
 npm install
 npm run build
 
-echo "[INFO] 创建主站 Search 页面"
+echo "[INFO] 创建 Search 首页"
 mkdir -p /opt/vps-deploy
 cat >/opt/vps-deploy/index.html <<EOF
 <!DOCTYPE html>
@@ -102,8 +111,7 @@ cat >/opt/vps-deploy/index.html <<EOF
 <body style="text-align:center;margin-top:15%">
 <h2>Search</h2>
 <form action="https://www.bing.com/search" method="get">
-<input name="q" style="width:300px;height:30px">
-<br><br>
+<input name="q" style="width:300px;height:30px"><br><br>
 <button type="submit">Search</button>
 </form>
 <br><br>
@@ -127,19 +135,23 @@ server {
     ssl_certificate     $CERT_DIR/fullchain.pem;
     ssl_certificate_key $CERT_DIR/key.pem;
 
+    # 主站 Search
     location / {
         root /opt/vps-deploy;
         index index.html;
     }
 
+    # sub-web-modify 前端 UI
     location /sub/ {
         alias /opt/sub-web-modify/dist/;
         index index.html;
         try_files \$uri \$uri/ /sub/index.html;
     }
 
+    # SubConverter API 反代
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
+        proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -154,6 +166,7 @@ nginx -t && systemctl reload nginx
 
 echo "======================================"
 echo "🎉 部署完成！"
-echo "Search: https://$DOMAIN"
+echo "主页 Search: https://$DOMAIN"
 echo "订阅转换 UI: https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
+echo "后端 API: https://$DOMAIN/sub/api/"
 echo "======================================"

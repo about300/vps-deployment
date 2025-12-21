@@ -5,9 +5,8 @@ echo "======================================"
 echo " 一键部署 全栈服务"
 echo " - SubConverter + sub-web-modify"
 echo " - S-UI 面板"
-echo " - AdGuard Home 3000端口"
-echo " - Reality 443端口 TLS (SNI 自行设置)"
-echo " - Let’s Encrypt DNS-01 自动获取证书"
+echo " - Reality & VLESS 节点提示"
+echo " - SSL 使用 Let's Encrypt (DNS-01)"
 echo "======================================"
 
 read -rp "请输入你的域名（如 example.com）: " DOMAIN
@@ -22,17 +21,17 @@ apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
 
 echo "[INFO] 防火墙放行必要端口"
-ufw allow 22
-ufw allow 80
-ufw allow 443
-ufw allow 3000
+ufw allow 22          # SSH
+ufw allow 80          # HTTP
+ufw allow 443         # HTTPS + Reality 共用端口
+ufw allow 8445        # 备用端口，用于 DoH
 ufw --force enable
 
-echo "[INFO] 安装 acme.sh 用于 Let’s Encrypt 证书"
+echo "[INFO] 安装 acme.sh 用于 Let's Encrypt 证书"
 curl https://get.acme.sh | sh
 ACME_SH="$HOME/.acme.sh/acme.sh"
 
-echo "[INFO] 切换默认 CA 为 Let's Encrypt"
+echo "[INFO] 设置默认 CA 为 Let's Encrypt"
 "$ACME_SH" --set-default-ca --server letsencrypt
 
 CERT_DIR="/etc/nginx/ssl/$DOMAIN"
@@ -40,12 +39,12 @@ mkdir -p "$CERT_DIR"
 
 echo "[INFO] 申请或续期 SSL 证书"
 if "$ACME_SH" --renew -d "$DOMAIN" --force; then
-  echo "[OK] SSL 证书已存在或续期"
+    echo "[OK] SSL 证书已存在或续期"
 else
-  "$ACME_SH" --issue --dns dns_cf -d "$DOMAIN"
+    "$ACME_SH" --issue --dns dns_cf -d "$DOMAIN"
 fi
 
-echo "[INFO] 安装证书到 nginx"
+echo "[INFO] 安装 SSL 到 nginx"
 "$ACME_SH" --install-cert -d "$DOMAIN" \
   --key-file "$CERT_DIR/key.pem" \
   --fullchain-file "$CERT_DIR/fullchain.pem" \
@@ -54,7 +53,8 @@ echo "[INFO] 安装证书到 nginx"
 echo "[INFO] 部署 SubConverter 后端"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
-wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+wget -O subconverter \
+  https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
 chmod +x subconverter
 
 cat >/etc/systemd/system/subconverter.service <<EOF
@@ -77,32 +77,25 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 echo "[INFO] 构建 sub-web-modify 前端"
-SUBWEB_DIR="/opt/vps-deployment/sub-web-modify"
-if [ ! -d "$SUBWEB_DIR" ]; then
-  echo "[ERROR] $SUBWEB_DIR 不存在，请确认仓库已上传到该目录"
-  exit 1
-fi
+cd /opt/vps-deployment/sub-web-modify || { echo "错误：sub-web-modify 不存在"; exit 1; }
 
+# 安装 Node.js 22 + npm
 export NVM_DIR="$HOME/.nvm"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.6/install.sh | bash
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.6/install.sh | bash
 fi
-# shellcheck source=/dev/null
-. "$NVM_DIR/nvm.sh"
-
+source "$NVM_DIR/nvm.sh"
 nvm install 22
 nvm use 22
 
-cd "$SUBWEB_DIR"
-npm install --no-audit --no-fund
+npm install
 npm run build
 
-# 复制构建产物到 /opt/sub-web-modify/dist
 rm -rf /opt/sub-web-modify/dist
 mkdir -p /opt/sub-web-modify/dist
 cp -r dist/* /opt/sub-web-modify/dist/
 
-echo "[INFO] 安装 S-UI 面板（节点和 Reality 后续自行设置）"
+echo "[INFO] 安装 S-UI 面板（手动设置节点）"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
 echo "[INFO] 写入 nginx 配置"
@@ -142,7 +135,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    # S-UI 面板（通过 SSH 隧道访问，无需公网暴露端口）
+    # S-UI 面板
     location /ui/ {
         proxy_pass http://127.0.0.1:2095/app/;
         proxy_set_header Host \$host;
@@ -168,7 +161,10 @@ nginx -t && systemctl reload nginx
 
 echo "======================================"
 echo "🎉 全部部署完成"
-echo "访问主站 Search: https://$DOMAIN"
-echo "订阅转换 UI:   https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
-echo "S-UI 面板（SSH 隧道访问）: https://$DOMAIN/ui/"
+echo "端口说明："
+echo " 443 - HTTPS + Reality 共用"
+echo " 8445 - 备用端口，可用于 DoH 或自定义节点"
+echo "S-UI 面板: 通过 SSH 隧道访问 127.0.0.1:2095，无需暴露公网"
+echo "SubConverter API: https://$DOMAIN/sub/api/"
+echo "订阅转换 UI: https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
 echo "======================================"

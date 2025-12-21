@@ -2,11 +2,11 @@
 set -e
 
 echo "======================================"
-echo " 一键部署 SubConverter + sub-web-modify"
-echo " 使用 Let’s Encrypt 证书（优先自动续期）"
+echo " 一键部署 SubConverter + sub‑web‑modify"
+echo " 使用 ZeroSSL 证书（无重复证书限制）"
 echo "======================================"
 
-read -rp "请输入你的域名（如 girl.example.com）: " DOMAIN
+read -rp "请输入你的域名: " DOMAIN
 read -rp "请输入 Cloudflare 注册邮箱: " CF_EMAIL
 read -rp "请输入 Cloudflare API Token: " CF_TOKEN
 
@@ -26,34 +26,33 @@ ufw --force enable
 
 echo "[INFO] 安装 acme.sh"
 curl https://get.acme.sh | sh
-ACME_SH="$HOME/.acme.sh/acme.sh"
+source ~/.bashrc
 
-# 让 acme.sh 使用 Let’s Encrypt CA
-"$ACME_SH" --set-default-ca --server letsencrypt
+echo "[INFO] 设置默认 CA 为 ZeroSSL（acme.sh）"
+acme.sh --set-default-ca --server zerossl
+
+echo "[INFO] 申请 ZeroSSL 证书"
+acme.sh --issue \
+  --dns dns_cf \
+  -d "$DOMAIN" \
+  --keylength ec-256 \
+  --server zerossl
 
 CERT_DIR="/etc/nginx/ssl/$DOMAIN"
 mkdir -p "$CERT_DIR"
 
-# —— 优先续期已有证书
-echo "[INFO] 尝试续期已有证书"
-if "$ACME_SH" --renew -d "$DOMAIN" --force; then
-    echo "[OK] 证书续期成功或已有有效证书"
-else
-    echo "[WARN] 续期失败或没有旧证书，申请新证书"
-    "$ACME_SH" --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
-fi
-
-echo "[INFO] 安装/更新证书到 Nginx"
-"$ACME_SH" --install-cert -d "$DOMAIN" \
+echo "[INFO] 安装证书到 Nginx"
+acme.sh --install-cert -d "$DOMAIN" \
   --key-file "$CERT_DIR/key.pem" \
   --fullchain-file "$CERT_DIR/fullchain.pem" \
   --reloadcmd "systemctl reload nginx"
 
-# —— SubConverter 后端
 echo "[INFO] 部署 SubConverter 后端"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
-wget -O subconverter https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter
+
+wget -O subconverter \
+  https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter
 chmod +x subconverter
 
 cat >/etc/systemd/system/subconverter.service <<EOF
@@ -72,13 +71,12 @@ systemctl daemon-reload
 systemctl enable subconverter
 systemctl restart subconverter
 
-# —— 安装 Node 22 & 构建 sub-web-modify
-echo "[INFO] 安装 Node.js 22"
+echo "[INFO] 安装 Node.js（用于构建 sub‑web‑modify）"
 apt remove -y nodejs
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs npm
 
-echo "[INFO] 构建 sub-web-modify 前端"
+echo "[INFO] 构建 sub‑web‑modify 前端"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/youshandefeiyang/sub-web-modify.git /opt/sub-web-modify
 cd /opt/sub-web-modify
@@ -92,8 +90,7 @@ EOF
 npm install
 npm run build
 
-# —— 主站 Search 首页
-echo "[INFO] 创建主站 Search 页面"
+echo "[INFO] 创建 Search 首页"
 mkdir -p /opt/vps-deploy
 cat >/opt/vps-deploy/index.html <<EOF
 <!DOCTYPE html>
@@ -112,7 +109,6 @@ cat >/opt/vps-deploy/index.html <<EOF
 </html>
 EOF
 
-# —— Nginx 配置
 echo "[INFO] 写入 Nginx 配置"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
@@ -120,7 +116,6 @@ server {
     server_name $DOMAIN;
     return 301 https://\$host\$request_uri;
 }
-
 server {
     listen 443 ssl http2;
     server_name $DOMAIN;
@@ -141,7 +136,6 @@ server {
 
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
-        proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -152,10 +146,13 @@ EOF
 
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx
+nginx -t
+systemctl reload nginx
 
 echo "======================================"
-echo "🎉 部署完成！"
-echo "Search: https://$DOMAIN"
+echo "🎉 全部部署完成！"
+echo "访问 Search 首页: https://$DOMAIN"
 echo "订阅转换 UI: https://$DOMAIN/sub/?backend=https://$DOMAIN/sub/api/"
+echo "后端 API: https://$DOMAIN/sub/api/"
+echo "AdGuard Home: 继续使用独立端口访问"
 echo "======================================"

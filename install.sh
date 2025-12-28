@@ -15,7 +15,7 @@ read -rp "请输入【主站域名】（如 web.mycloudshare.org）: " WEB_DOMAI
 read -rp "请输入【Reality 域名】（如 web.vl.mycloudshare.org）: " VL_DOMAIN
 
 export CF_Token
-read -rsp "请输入 Cloudflare API Token（DNS 编辑权限）: " CF_Token
+read -rp "请输入 Cloudflare API Token（DNS 编辑权限）: " CF_Token
 echo
 export CF_Account_ID
 read -rp "请输入 Cloudflare Account ID（可留空）: " CF_Account_ID

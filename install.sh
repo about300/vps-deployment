@@ -118,3 +118,12 @@ nginx -t
 systemctl restart nginx
 
 echo "===== 第一阶段完成 ====="
+
+### 安装s-ui面板
+
+bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+
+
+### 安装Adgurad home
+
+curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh

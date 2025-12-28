@@ -1,25 +1,29 @@
 #!/usr/bin/env bash
 set -e
 
-echo "===== VPS 全栈部署（Nginx Stream + Sub-web + S-UI）====="
+echo "===== VPS 全栈部署（Web + S-UI Xray 共用 443）====="
 
-read -rp "主域名（主页用，如 mycloudshare.org）: " DOMAIN
-read -rp "子域名（VLESS 用，如 vless.mycloudshare.org）: " VLESS_DOMAIN
-read -rp "Cloudflare API Token（DNS-01 申请证书）: " CF_TOKEN
+# 输入域名
+read -rp "Web 主域名（如 mycloudshare.org）: " DOMAIN
+read -rp "VLESS 子域名（如 vless.mycloudshare.org）: " VLESS_DOMAIN
+read -rp "Cloudflare API Token: " CF_TOKEN
 
 export CF_Token="$CF_TOKEN"
 
-echo "[1/10] 更新系统并安装依赖"
+echo "[1/10] 更新系统"
 apt update -y
-apt install -y curl wget git unzip socat cron ufw build-essential lsb-release gnupg2 apt-transport-https
+apt install -y curl wget git unzip socat cron ufw nginx-full build-essential nodejs npm
 
-echo "[2/10] 配置防火墙"
+echo "[2/10] 配置防火墙（保留原有端口）"
 ufw allow 22
 ufw allow 80
 ufw allow 443
+ufw allow 2095
+ufw allow 2096
+ufw allow 3000
 ufw --force enable
 
-echo "[3/10] 安装 acme.sh（DNS-01）"
+echo "[3/10] 安装 acme.sh（Cloudflare DNS-01）"
 if [ ! -d "$HOME/.acme.sh" ]; then
   curl https://get.acme.sh | sh
 fi
@@ -28,48 +32,69 @@ source ~/.bashrc
 
 mkdir -p /etc/nginx/ssl
 
-echo "[4/10] 申请证书（Cloudflare DNS）"
-~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" -d "$VLESS_DOMAIN"
+echo "[4/10] 申请证书（Web 主域名 + VLESS 子域名）"
+~/.acme.sh/acme.sh --issue \
+  --dns dns_cf \
+  -d "$DOMAIN" \
+  -d "$VLESS_DOMAIN" \
+  --keylength ec-256
+
 ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
   --key-file       /etc/nginx/ssl/key.pem \
-  --fullchain-file /etc/nginx/ssl/cert.pem
+  --fullchain-file /etc/nginx/ssl/fullchain.pem \
+  --ecc
 
-echo "[5/10] 安装 nginx 官方版（带 stream 模块）"
-# 卸载系统自带 nginx
-apt remove -y nginx nginx-common nginx-full
-# 官方源安装
-curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor > /usr/share/keyrings/nginx-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu $(lsb_release -cs) nginx" \
-    > /etc/apt/sources.list.d/nginx.list
-apt update -y
-apt install -y nginx
+echo "[5/10] 安装 SubConverter"
+mkdir -p /opt/subconverter
+cd /opt/subconverter
+if [ ! -f subconverter ]; then
+  wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+  chmod +x subconverter
+fi
 
-echo "[6/10] 安装 Node.js LTS（用于 sub-web-modify）"
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt install -y nodejs
+cat >/etc/systemd/system/subconverter.service <<EOF
+[Unit]
+Description=SubConverter
+After=network.target
 
-echo "[7/10] 构建 sub-web-modify"
+[Service]
+ExecStart=/opt/subconverter/subconverter
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable subconverter
+systemctl restart subconverter
+
+echo "[6/10] 构建 sub-web-modify"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
-npm install --no-audit --no-fund
+npm install
 npm run build
 
-echo "[8/10] 安装 S-UI（面板端口后续在面板里设置）"
+echo "[7/10] 安装 S-UI（保留原端口）"
 if [ ! -d /usr/local/s-ui ]; then
   bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 fi
 
-echo "[9/10] 配置 nginx"
-mkdir -p /etc/nginx/conf.d
+echo "[8/10] 安装 AdGuard Home（保持默认端口 3000）"
+if [ ! -d /opt/AdGuardHome ]; then
+  bash <(curl -s -L https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.sh)
+fi
 
+echo "[9/10] 配置 Nginx（HTTP + Stream 分流 443）"
+
+# HTTP 代理 Web 主域名
 cat >/etc/nginx/conf.d/web.conf <<EOF
-# 主域名主页 HTTP/HTTPS
 server {
-    listen 127.0.0.1:4443 ssl;
+    listen 127.0.0.1:8443 ssl;
     server_name $DOMAIN;
 
-    ssl_certificate     /etc/nginx/ssl/cert.pem;
+    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/key.pem;
 
     root /opt/sub-web-modify/dist;
@@ -87,11 +112,12 @@ server {
 }
 EOF
 
+# Stream 分流 VLESS 子域名到 S-UI 内置 Xray/Reality
 cat >/etc/nginx/stream.conf <<EOF
 stream {
     map \$ssl_preread_server_name \$backend {
         $VLESS_DOMAIN 127.0.0.1:4431;
-        default 127.0.0.1:4443;
+        default       127.0.0.1:8443;
     }
 
     server {
@@ -102,11 +128,12 @@ stream {
 }
 EOF
 
-# 在 nginx.conf include stream.conf
-grep -q "include /etc/nginx/stream.conf;" /etc/nginx/nginx.conf || \
-  sed -i '/http {/i include /etc/nginx/stream.conf;' /etc/nginx/nginx.conf
+# 确保 nginx.conf 支持 stream
+if ! grep -q "include /etc/nginx/stream.conf;" /etc/nginx/nginx.conf; then
+    sed -i '/http {/i include /etc/nginx/stream.conf;' /etc/nginx/nginx.conf
+fi
 
-echo "[10/10] 启动 nginx"
+echo "[10/10] 启动服务"
 nginx -t
 systemctl restart nginx
 
@@ -115,6 +142,7 @@ echo "🎉 部署完成"
 echo ""
 echo "🌐 Web 主页: https://$DOMAIN"
 echo "📦 Sub API : https://$DOMAIN/sub/api/"
-echo "🛠 S-UI    : 通过面板设置端口和节点（默认本地监听）"
-echo "🚀 VLESS   : 子域名 $VLESS_DOMAIN（在 S-UI 里配 Reality / TLS）"
+echo "🛠 S-UI 面板: ssh -L 2095:127.0.0.1:2095 root@你的IP"
+echo "🚀 VLESS 子域名: $VLESS_DOMAIN（S-UI 内配置 Reality/TLS）"
+echo "🛡 AdGuard Home: http://你的IP:3000"
 echo "======================================"

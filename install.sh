@@ -1,148 +1,90 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# ===========================
+# VPS 部署脚本 - 完整版
+# ===========================
+
 set -e
 
-echo "===== VPS 全栈部署（Web + S-UI Xray 共用 443）====="
+echo "==== 1/15 配置基础变量 ===="
+read -p "请输入主域名 (Main domain, 例: example.com): " MAIN_DOMAIN
+read -p "请输入 VLESS 子域名 (Subdomain, 例: v.example.com): " SUB_DOMAIN
+read -p "请输入 S-UI 面板用户名 (默认: admin): " SUI_USER
+SUI_USER=${SUI_USER:-admin}
+read -p "请输入 S-UI 面板密码 (默认: admin123): " SUI_PASS
+SUI_PASS=${SUI_PASS:-admin123}
+read -p "请输入 S-UI 面板端口 (默认 2095): " SUI_PORT
+SUI_PORT=${SUI_PORT:-2095}
+read -p "请输入 S-UI 订阅端口 (默认 2096): " SUB_PORT
+SUB_PORT=${SUB_PORT:-2096}
+read -p "请输入 AdGuard Home Web 端口 (默认 3000): " AD_PORT
+AD_PORT=${AD_PORT:-3000}
 
-# 输入域名
-read -rp "Web 主域名（如 mycloudshare.org）: " DOMAIN
-read -rp "VLESS 子域名（如 vless.mycloudshare.org）: " VLESS_DOMAIN
-read -rp "Cloudflare API Token: " CF_TOKEN
+SSL_PATH="/etc/ssl/mycerts"
+mkdir -p $SSL_PATH
 
-export CF_Token="$CF_TOKEN"
-
-echo "[1/10] 更新系统"
+echo "==== 2/15 安装基础依赖 ===="
 apt update -y
-apt install -y curl wget git unzip socat cron ufw nginx-full build-essential nodejs npm
+apt install -y curl wget tar unzip socat git npm ufw lsof
 
-echo "[2/10] 配置防火墙（保留原有端口）"
+echo "==== 3/15 配置防火墙 ===="
 ufw allow 22
 ufw allow 80
 ufw allow 443
-ufw allow 2095
-ufw allow 2096
-ufw allow 3000
+ufw allow $SUI_PORT
+ufw allow $SUB_PORT
+ufw allow $AD_PORT
 ufw --force enable
 
-echo "[3/10] 安装 acme.sh（Cloudflare DNS-01）"
-if [ ! -d "$HOME/.acme.sh" ]; then
-  curl https://get.acme.sh | sh
-fi
+echo "==== 4/15 安装 acme.sh ===="
+curl https://get.acme.sh | sh
 source ~/.bashrc
-~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
-mkdir -p /etc/nginx/ssl
+echo "==== 5/15 申请证书 ===="
+acme.sh --issue --dns dns_cf -d $MAIN_DOMAIN -d $SUB_DOMAIN --keylength ec-256
+acme.sh --install-cert -d $MAIN_DOMAIN -d $SUB_DOMAIN \
+    --ecc \
+    --key-file $SSL_PATH/key.pem \
+    --fullchain-file $SSL_PATH/fullchain.pem \
+    --reloadcmd "systemctl reload nginx"
 
-echo "[4/10] 申请证书（Web 主域名 + VLESS 子域名）"
-~/.acme.sh/acme.sh --issue \
-  --dns dns_cf \
-  -d "$DOMAIN" \
-  -d "$VLESS_DOMAIN" \
-  --keylength ec-256
+echo "证书生成完成，路径如下："
+echo "私钥: $SSL_PATH/key.pem"
+echo "全链: $SSL_PATH/fullchain.pem"
 
-~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-  --key-file       /etc/nginx/ssl/key.pem \
-  --fullchain-file /etc/nginx/ssl/fullchain.pem \
-  --ecc
+echo "==== 6/15 安装 SubConverter ===="
+wget -O /usr/local/bin/subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+chmod +x /usr/local/bin/subconverter
+systemctl enable --now subconverter.service
 
-echo "[5/10] 安装 SubConverter"
-mkdir -p /opt/subconverter
-cd /opt/subconverter
-if [ ! -f subconverter ]; then
-  wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
-  chmod +x subconverter
-fi
-
-cat >/etc/systemd/system/subconverter.service <<EOF
-[Unit]
-Description=SubConverter
-After=network.target
-
-[Service]
-ExecStart=/opt/subconverter/subconverter
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable subconverter
-systemctl restart subconverter
-
-echo "[6/10] 构建 sub-web-modify"
-rm -rf /opt/sub-web-modify
-git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
-cd /opt/sub-web-modify
+echo "==== 7/15 安装前端主页 (带搜索 + 订阅转换) ===="
+rm -rf /opt/sub-web
+git clone https://github.com/about300/sub-web-modify.git /opt/sub-web
+cd /opt/sub-web
 npm install
 npm run build
+cp -r dist/* /var/www/html/
 
-echo "[7/10] 安装 S-UI（保留原端口）"
-if [ ! -d /usr/local/s-ui ]; then
-  bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
-fi
+echo "==== 8/15 安装 S-UI 面板 ===="
+bash <(curl -sL https://github.com/alireza0/s-ui/releases/latest/download/s-ui-linux-amd64.tar.gz) || true
+# 使用官方脚本安装后再配置用户
+s-ui reset-admin --user $SUI_USER --pass $SUI_PASS
+echo "S-UI 面板安装完成，端口: $SUI_PORT, 订阅端口: $SUB_PORT"
 
-echo "[8/10] 安装 AdGuard Home（保持默认端口 3000）"
-if [ ! -d /opt/AdGuardHome ]; then
-  bash <(curl -s -L https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.sh)
-fi
+echo "==== 9/15 安装 AdGuard Home ===="
+wget -O /tmp/AdGuardHome.tar.gz https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.tar.gz
+tar -xzf /tmp/AdGuardHome.tar.gz -C /opt/
+cd /opt/AdGuardHome
+./AdGuardHome -s install
+# 修改端口
+sed -i "s/3000/$AD_PORT/g" /opt/AdGuardHome/AdGuardHome.yaml
+systemctl restart AdGuardHome
 
-echo "[9/10] 配置 Nginx（HTTP + Stream 分流 443）"
+echo "==== 安装完成 ===="
+echo "主页已部署到 /var/www/html/"
+echo "S-UI 面板地址: http://$MAIN_DOMAIN:$SUI_PORT/app/"
+echo "S-UI 订阅地址: http://$MAIN_DOMAIN:$SUB_PORT/sub/"
+echo "AdGuard Home Web 地址: https://$MAIN_DOMAIN:$AD_PORT/"
+echo "证书路径: $SSL_PATH/"
+echo "SubConverter 已安装，默认端口请自行在配置文件查看"
 
-# HTTP 代理 Web 主域名
-cat >/etc/nginx/conf.d/web.conf <<EOF
-server {
-    listen 127.0.0.1:8443 ssl;
-    server_name $DOMAIN;
-
-    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/key.pem;
-
-    root /opt/sub-web-modify/dist;
-    index index.html;
-
-    location / {
-        try_files \$uri \$uri/ /index.html;
-    }
-
-    location /sub/api/ {
-        proxy_pass http://127.0.0.1:25500/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$remote_addr;
-    }
-}
-EOF
-
-# Stream 分流 VLESS 子域名到 S-UI 内置 Xray/Reality
-cat >/etc/nginx/stream.conf <<EOF
-stream {
-    map \$ssl_preread_server_name \$backend {
-        $VLESS_DOMAIN 127.0.0.1:4431;
-        default       127.0.0.1:8443;
-    }
-
-    server {
-        listen 443 reuseport;
-        proxy_pass \$backend;
-        ssl_preread on;
-    }
-}
-EOF
-
-# 确保 nginx.conf 支持 stream
-if ! grep -q "include /etc/nginx/stream.conf;" /etc/nginx/nginx.conf; then
-    sed -i '/http {/i include /etc/nginx/stream.conf;' /etc/nginx/nginx.conf
-fi
-
-echo "[10/10] 启动服务"
-nginx -t
-systemctl restart nginx
-
-echo "======================================"
-echo "🎉 部署完成"
-echo ""
-echo "🌐 Web 主页: https://$DOMAIN"
-echo "📦 Sub API : https://$DOMAIN/sub/api/"
-echo "🛠 S-UI 面板: ssh -L 2095:127.0.0.1:2095 root@你的IP"
-echo "🚀 VLESS 子域名: $VLESS_DOMAIN（S-UI 内配置 Reality/TLS）"
-echo "🛡 AdGuard Home: http://你的IP:3000"
-echo "======================================"
+echo "安装完成！请通过面板添加节点和用户。"

@@ -1,90 +1,136 @@
-#!/bin/bash
-# ===========================
-# VPS 部署脚本 - 完整版
-# ===========================
-
+#!/usr/bin/env bash
 set -e
 
-echo "==== 1/15 配置基础变量 ===="
-read -p "请输入主域名 (Main domain, 例: example.com): " MAIN_DOMAIN
-read -p "请输入 VLESS 子域名 (Subdomain, 例: v.example.com): " SUB_DOMAIN
-read -p "请输入 S-UI 面板用户名 (默认: admin): " SUI_USER
-SUI_USER=${SUI_USER:-admin}
-read -p "请输入 S-UI 面板密码 (默认: admin123): " SUI_PASS
-SUI_PASS=${SUI_PASS:-admin123}
-read -p "请输入 S-UI 面板端口 (默认 2095): " SUI_PORT
-SUI_PORT=${SUI_PORT:-2095}
-read -p "请输入 S-UI 订阅端口 (默认 2096): " SUB_PORT
-SUB_PORT=${SUB_PORT:-2096}
-read -p "请输入 AdGuard Home Web 端口 (默认 3000): " AD_PORT
-AD_PORT=${AD_PORT:-3000}
+# ====== 基础设置 ======
+MAIN_DOMAIN="example.com"        # 主域名
+VLESS_SUBDOMAIN="vless.example.com"  # VLESS 子域名
+CERT_PATH="/etc/nginx/ssl"
+SUI_PANEL_PORT=2095
+SUI_PANEL_PATH="/app/"
+SUI_SUB_PORT=2096
+SUI_SUB_PATH="/sub/"
+SUI_ADMIN_USER="adminuser"
+SUI_ADMIN_PASS="adminpass"
+AGH_PORT=3000
+WEB_PATH="/var/www/html"
 
-SSL_PATH="/etc/ssl/mycerts"
-mkdir -p $SSL_PATH
-
-echo "==== 2/15 安装基础依赖 ===="
+# ====== 安装依赖 ======
+echo "1/10 安装系统依赖..."
 apt update -y
-apt install -y curl wget tar unzip socat git npm ufw lsof
+apt install -y curl wget git npm tar ufw socat expect nginx
 
-echo "==== 3/15 配置防火墙 ===="
-ufw allow 22
-ufw allow 80
-ufw allow 443
-ufw allow $SUI_PORT
-ufw allow $SUB_PORT
-ufw allow $AD_PORT
-ufw --force enable
+# ====== 防火墙配置 ======
+echo "2/10 配置防火墙..."
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw allow $SUI_PANEL_PORT/tcp
+ufw allow $SUI_SUB_PORT/tcp
+ufw allow $AGH_PORT/tcp
+ufw enable
 
-echo "==== 4/15 安装 acme.sh ===="
+# ====== 安装 acme.sh ======
+echo "3/10 安装 acme.sh..."
 curl https://get.acme.sh | sh
 source ~/.bashrc
+mkdir -p $CERT_PATH
 
-echo "==== 5/15 申请证书 ===="
-acme.sh --issue --dns dns_cf -d $MAIN_DOMAIN -d $SUB_DOMAIN --keylength ec-256
-acme.sh --install-cert -d $MAIN_DOMAIN -d $SUB_DOMAIN \
-    --ecc \
-    --key-file $SSL_PATH/key.pem \
-    --fullchain-file $SSL_PATH/fullchain.pem \
-    --reloadcmd "systemctl reload nginx"
+# ====== 申请证书 ======
+echo "4/10 申请证书..."
+~/.acme.sh/acme.sh --issue --dns dns_cf -d $MAIN_DOMAIN -d $VLESS_SUBDOMAIN
+~/.acme.sh/acme.sh --install-cert -d $MAIN_DOMAIN \
+  --key-file       $CERT_PATH/key.pem \
+  --fullchain-file $CERT_PATH/fullchain.pem \
+  --reloadcmd      "systemctl restart nginx && systemctl restart AdGuardHome"
 
-echo "证书生成完成，路径如下："
-echo "私钥: $SSL_PATH/key.pem"
-echo "全链: $SSL_PATH/fullchain.pem"
-
-echo "==== 6/15 安装 SubConverter ===="
+# ====== 安装 SubConverter ======
+echo "5/10 安装 SubConverter..."
 wget -O /usr/local/bin/subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
 chmod +x /usr/local/bin/subconverter
-systemctl enable --now subconverter.service
+systemctl enable subconverter.service
 
-echo "==== 7/15 安装前端主页 (带搜索 + 订阅转换) ===="
-rm -rf /opt/sub-web
-git clone https://github.com/about300/sub-web-modify.git /opt/sub-web
-cd /opt/sub-web
+# ====== 安装 sub-web-modify ======
+echo "6/10 安装 sub-web-modify..."
+git clone https://github.com/about300/sub-web-modify.git /opt/sub-web-modify
+cd /opt/sub-web-modify
 npm install
 npm run build
-cp -r dist/* /var/www/html/
+mkdir -p $WEB_PATH
+cp -r dist/* $WEB_PATH/
 
-echo "==== 8/15 安装 S-UI 面板 ===="
-bash <(curl -sL https://github.com/alireza0/s-ui/releases/latest/download/s-ui-linux-amd64.tar.gz) || true
-# 使用官方脚本安装后再配置用户
-s-ui reset-admin --user $SUI_USER --pass $SUI_PASS
-echo "S-UI 面板安装完成，端口: $SUI_PORT, 订阅端口: $SUB_PORT"
+# ====== 安装 S-UI 官方脚本 ======
+echo "7/10 安装 S-UI..."
+expect <<EOF
+spawn bash -c "bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/refs/heads/main/install.sh)"
+expect "Do you want to continue with the modification"
+send "y\r"
+expect "Enter the panel port"
+send "$SUI_PANEL_PORT\r"
+expect "Enter the panel path"
+send "$SUI_PANEL_PATH\r"
+expect "Enter the subscription port"
+send "$SUI_SUB_PORT\r"
+expect "Enter the subscription path"
+send "$SUI_SUB_PATH\r"
+expect "Do you want to change admin credentials"
+send "y\r"
+expect "Please set up your username"
+send "$SUI_ADMIN_USER\r"
+expect "Please set up your password"
+send "$SUI_ADMIN_PASS\r"
+expect eof
+EOF
 
-echo "==== 9/15 安装 AdGuard Home ===="
-wget -O /tmp/AdGuardHome.tar.gz https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.tar.gz
-tar -xzf /tmp/AdGuardHome.tar.gz -C /opt/
-cd /opt/AdGuardHome
+# ====== 安装 AdGuard Home ======
+echo "8/10 安装 AdGuard Home..."
+AGH_PATH="/opt/adguardhome"
+wget -O AdGuardHome.tar.gz https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.tar.gz
+tar -xzf AdGuardHome.tar.gz -C /opt
+cd $AGH_PATH
 ./AdGuardHome -s install
-# 修改端口
-sed -i "s/3000/$AD_PORT/g" /opt/AdGuardHome/AdGuardHome.yaml
+
+# ====== 配置 AdGuard Home HTTPS ======
+echo "9/10 配置 AdGuard Home HTTPS..."
+cp $CERT_PATH/fullchain.pem $AGH_PATH/AdGuardHome.crt
+cp $CERT_PATH/key.pem $AGH_PATH/AdGuardHome.key
 systemctl restart AdGuardHome
 
-echo "==== 安装完成 ===="
-echo "主页已部署到 /var/www/html/"
-echo "S-UI 面板地址: http://$MAIN_DOMAIN:$SUI_PORT/app/"
-echo "S-UI 订阅地址: http://$MAIN_DOMAIN:$SUB_PORT/sub/"
-echo "AdGuard Home Web 地址: https://$MAIN_DOMAIN:$AD_PORT/"
-echo "证书路径: $SSL_PATH/"
-echo "SubConverter 已安装，默认端口请自行在配置文件查看"
+# ====== 配置 Nginx 反代 ======
+echo "10/10 配置 Nginx 反代 S-UI、主页和 SubConverter..."
+cat >/etc/nginx/sites-available/default <<EOF
+server {
+    listen 80;
+    server_name $MAIN_DOMAIN $VLESS_SUBDOMAIN;
 
-echo "安装完成！请通过面板添加节点和用户。"
+    location / {
+        root $WEB_PATH;
+        index index.html;
+    }
+
+    location /subconverter/ {
+        proxy_pass http://127.0.0.1:25500/;   # SubConverter 默认端口
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+
+    location $SUI_PANEL_PATH {
+        proxy_pass http://127.0.0.1:$SUI_PANEL_PORT$app/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+
+    listen 443 ssl;
+    ssl_certificate $CERT_PATH/fullchain.pem;
+    ssl_certificate_key $CERT_PATH/key.pem;
+}
+EOF
+
+systemctl restart nginx
+
+# ====== 完成提示 ======
+echo "安装完成！"
+echo "S-UI 面板: https://$MAIN_DOMAIN$SUI_PANEL_PATH"
+echo "主页: https://$MAIN_DOMAIN/"
+echo "SubConverter: https://$MAIN_DOMAIN/subconverter/"
+echo "AdGuard Home: https://$MAIN_DOMAIN:$AGH_PORT"
+echo "证书路径: $CERT_PATH"

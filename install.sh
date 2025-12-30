@@ -9,17 +9,11 @@ echo " - sub-web-modify 前端"
 echo " - AdGuard Home"
 echo " - S-UI 面板"
 echo " - Nginx stream + VLESS 共用 443"
-echo " - Cloudflare DNS-01 + Let's Encrypt"
+echo " - Let's Encrypt HTTP-01 验证"
 echo "======================================="
 
 # ---------- 交互 ----------
 read -rp "请输入【主站域名】（如 web.mycloudshare.org）: " WEB_DOMAIN
-
-export CF_Token
-read -rp "请输入 Cloudflare API Token（DNS 编辑权限）: " CF_Token
-echo
-export CF_Account_ID
-read -rp "请输入 Cloudflare Account ID（可留空）: " CF_Account_ID
 
 # ---------- 基础 ----------
 echo "[1/12] 系统更新 & 基础组件"
@@ -54,7 +48,7 @@ issue_cert () {
   if [ ! -f "/etc/nginx/ssl/$domain/fullchain.pem" ]; then
     echo "申请证书：$domain"
     mkdir -p /etc/nginx/ssl/$domain
-    ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$domain"
+    ~/.acme.sh/acme.sh --issue --webroot /var/www/html -d "$domain"
     ~/.acme.sh/acme.sh --install-cert -d "$domain" \
       --key-file       /etc/nginx/ssl/$domain/key.pem \
       --fullchain-file /etc/nginx/ssl/$domain/fullchain.pem
@@ -215,10 +209,4 @@ echo "======================================="
 echo "部署完成 🎉"
 echo "---------------------------------------"
 echo "主页: https://$WEB_DOMAIN"
-echo "订阅转换: https://$WEB_DOMAIN/subconvert"
-echo "Sub API: https://$WEB_DOMAIN/sub/api/"
-echo "AdGuard Home: https://$WEB_DOMAIN/adguard"
-echo "S-UI 面板: https://$WEB_DOMAIN/sui"
-echo "---------------------------------------"
-echo "VLESS 隐蔽配置已完成，监听端口：4433"
 echo

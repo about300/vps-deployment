@@ -123,8 +123,27 @@ if [ ! -d /opt/adguardhome ]; then
   tar -xvf /opt/adguardhome
 fi
 
+# ---------- 检查 Nginx stream 模块 ----------
+echo "[11/12] 检查 Nginx stream 模块"
+nginx -V | grep --quiet "with-stream" || {
+  echo "Nginx 未启用 stream 模块，正在重新编译 Nginx..."
+  
+  # 安装编译依赖
+  apt-get install -y build-essential libpcre3 libpcre3-dev libssl-dev zlib1g-dev
+
+  # 下载 Nginx 源码并解压
+  wget http://nginx.org/download/nginx-1.24.0.tar.gz
+  tar -zxvf nginx-1.24.0.tar.gz
+  cd nginx-1.24.0
+
+  # 重新编译并安装
+  ./configure --with-stream --with-http_ssl_module
+  make
+  make install
+}
+
 # ---------- Nginx 配置（Web + AdGuard + S-UI + VLESS 隐蔽） ----------
-echo "[11/12] Nginx Web 配置"
+echo "[12/12] Nginx 配置"
 cat >/etc/nginx/conf.d/web.conf <<EOF
 server {
     listen 80;
@@ -182,7 +201,7 @@ server {
 EOF
 
 # ---------- VLESS 配置（隐藏 VLESS 服务） ----------
-echo "[12/12] Nginx stream 配置（VLESS 隐蔽）"
+echo "[13/12] Nginx stream 配置（VLESS 隐蔽）"
 cat >/etc/nginx/stream.conf <<EOF
 stream {
     map \$ssl_preread_server_name \$backend {
@@ -198,17 +217,9 @@ stream {
 }
 EOF
 
-# 确保在 nginx.conf 中正确引入 stream.conf 配置
-if ! grep -q "include /etc/nginx/stream.conf;" /etc/nginx/nginx.conf; then
-    echo "include /etc/nginx/stream.conf;" >> /etc/nginx/nginx.conf
-fi
+grep -q "stream.conf" /etc/nginx/nginx.conf || \
+echo "include /etc/nginx/stream.conf;" >> /etc/nginx/nginx.conf
 
-# 禁用默认的 Nginx 配置文件，避免干扰
-if [ -f /etc/nginx/sites-enabled/default ]; then
-    rm /etc/nginx/sites-enabled/default
-fi
-
-# 验证配置并重启 Nginx
 nginx -t
 systemctl restart nginx
 
@@ -217,7 +228,6 @@ echo "======================================="
 echo "部署完成 🎉"
 echo "---------------------------------------"
 echo "主页: https://$WEB_DOMAIN"
-echo "AdGuard Home: https://$WEB_DOMAIN/adguard/"
-echo "S-UI 面板: https://$WEB_DOMAIN/sui/"
-echo "SubConvert: https://$WEB_DOMAIN/subconvert/"
-echo "======================================="
+echo
+echo "订阅转换前端: https://$WEB_DOMAIN/subconvert/"
+echo "SubConverter 后端 API: https://$WEB_DOMAIN/sub/api/"  

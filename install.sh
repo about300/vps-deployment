@@ -14,7 +14,6 @@ echo "======================================="
 
 # ---------- 交互 ----------
 read -rp "请输入【主站域名】（如 web.mycloudshare.org）: " WEB_DOMAIN
-read -rp "请输入【AdGuard Home 域名】（如 adguard.mycloudshare.org）: " ADGUARD_DOMAIN
 
 export CF_Token
 read -rp "请输入 Cloudflare API Token（DNS 编辑权限）: " CF_Token
@@ -66,7 +65,6 @@ issue_cert () {
 
 echo "[4/12] 申请 SSL 证书"
 issue_cert "$WEB_DOMAIN"
-issue_cert "$ADGUARD_DOMAIN"
 
 # ---------- 搜索主页 ----------
 echo "[5/12] 搜索主页（about300/vps-deployment/web）"
@@ -169,7 +167,7 @@ server {
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
 
-    # 反向代理 AdGuard Home（例如：通过 /adguard 路径）
+    # 反向代理 AdGuard Home（通过 /adguard 路径）
     location /adguard/ {
         proxy_pass http://127.0.0.1:3000/;  # AdGuard Home 默认端口
         proxy_set_header Host \$host;
@@ -178,7 +176,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    # 反向代理 S-UI 面板（例如：通过 /sui 路径）
+    # 反向代理 S-UI 面板（通过 /sui 路径）
     location /sui/ {
         proxy_pass http://127.0.0.1:2095/;  # S-UI 面板默认端口
         proxy_set_header Host \$host;
@@ -223,4 +221,4 @@ echo "AdGuard Home: https://$WEB_DOMAIN/adguard"
 echo "S-UI 面板: https://$WEB_DOMAIN/sui"
 echo "---------------------------------------"
 echo "VLESS 隐蔽配置已完成，监听端口：4433"
-echo "======================================="
+echo

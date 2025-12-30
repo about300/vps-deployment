@@ -123,27 +123,8 @@ if [ ! -d /opt/adguardhome ]; then
   tar -xvf /opt/adguardhome
 fi
 
-# ---------- 检查 Nginx stream 模块 ----------
-echo "[11/12] 检查 Nginx stream 模块"
-nginx -V | grep --quiet "with-stream" || {
-  echo "Nginx 未启用 stream 模块，正在重新编译 Nginx..."
-  
-  # 安装编译依赖
-  apt-get install -y build-essential libpcre3 libpcre3-dev libssl-dev zlib1g-dev
-
-  # 下载 Nginx 源码并解压
-  wget http://nginx.org/download/nginx-1.24.0.tar.gz
-  tar -zxvf nginx-1.24.0.tar.gz
-  cd nginx-1.24.0
-
-  # 重新编译并安装
-  ./configure --with-stream --with-http_ssl_module
-  make
-  make install
-}
-
 # ---------- Nginx 配置（Web + AdGuard + S-UI + VLESS 隐蔽） ----------
-echo "[12/12] Nginx 配置"
+echo "[11/12] Nginx Web 配置"
 cat >/etc/nginx/conf.d/web.conf <<EOF
 server {
     listen 80;
@@ -180,7 +161,7 @@ server {
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
 
-    # 反向代理 AdGuard Home（通过 /adguard 路径）
+    # 反向代理 AdGuard Home（通过 /adguard 路径） 
     location /adguard/ {
         proxy_pass http://127.0.0.1:3000/;  # AdGuard Home 默认端口
         proxy_set_header Host \$host;
@@ -189,7 +170,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    # 反向代理 S-UI 面板（通过 /sui 路径）
+    # 反向代理 S-UI 面板（通过 /sui 路径） 
     location /sui/ {
         proxy_pass http://127.0.0.1:2095/;  # S-UI 面板默认端口
         proxy_set_header Host \$host;
@@ -201,7 +182,7 @@ server {
 EOF
 
 # ---------- VLESS 配置（隐藏 VLESS 服务） ----------
-echo "[13/12] Nginx stream 配置（VLESS 隐蔽）"
+echo "[12/12] Nginx stream 配置（VLESS 隐蔽）"
 cat >/etc/nginx/stream.conf <<EOF
 stream {
     map \$ssl_preread_server_name \$backend {
@@ -229,5 +210,3 @@ echo "部署完成 🎉"
 echo "---------------------------------------"
 echo "主页: https://$WEB_DOMAIN"
 echo
-echo "订阅转换前端: https://$WEB_DOMAIN/subconvert/"
-echo "SubConverter 后端 API: https://$WEB_DOMAIN/sub/api/"  

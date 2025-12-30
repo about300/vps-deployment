@@ -1,29 +1,45 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 # 1. Prompt for domain and Cloudflare API credentials
-read -p "Main domain (e.g. web.example.com): " domain
-read -p "Cloudflare Email: " cf_email
-read -p "Cloudflare API Token: " cf_token
+read -p "请输入主域名（如 web.mycloudshare.org）: " DOMAIN
+read -p "请输入 Cloudflare 邮箱: " CF_EMAIL
+read -p "请输入 Cloudflare API Token: " CF_TOKEN
 
-# 2. Install Nginx and Xray-core
-sudo apt update
-sudo apt install -y nginx curl socat git build-essential nodejs npm
+# 2. Update system and install dependencies
+echo "[1/9] 更新系统"
+apt update -y
+apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 nodejs npm
 
-# 3. Clone and Deploy the Web Homepage (with search bar)
-sudo mkdir -p /var/www/html
-sudo chown -R www-data:www-data /var/www/html
-if [ ! -d /opt/vps-deployment ]; then
-    sudo git clone https://github.com/about300/vps-deployment.git /opt/vps-deployment
-fi
-sudo cp -r /opt/vps-deployment/web/* /var/www/html/
-sudo chown -R www-data:www-data /var/www/html
+# 3. Firewall setup
+echo "[2/9] 配置防火墙"
+ufw allow 22        # SSH
+ufw allow 80        # HTTP
+ufw allow 443       # HTTPS/VLESS
+ufw allow 3000      # AdGuard Home UI
+ufw allow 25500     # SubConverter backend
+ufw allow 8445      # (if needed)
+ufw allow 8446      # (if needed)
+ufw --force enable
 
-# 4. Install SubConverter backend (without Docker)
-sudo mkdir -p /opt/subconverter
+# 4. Install acme.sh and obtain SSL certificate (Let’s Encrypt)
+echo "[3/9] 安装 acme.sh 并获取 SSL 证书"
+curl https://get.acme.sh | sh
+source ~/.bashrc
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+mkdir -p /etc/nginx/ssl/$DOMAIN
+~/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone || true
+~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+  --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
+  --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
+  --reloadcmd "systemctl reload nginx"
+
+# 5. Install SubConverter backend (without Docker)
+echo "[4/9] 安装 SubConverter 后端"
+mkdir -p /opt/subconverter
 cd /opt/subconverter
-sudo wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
-sudo chmod +x subconverter
+wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+chmod +x subconverter
 
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
@@ -38,43 +54,41 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable subconverter
-sudo systemctl start subconverter
+systemctl daemon-reload
+systemctl enable subconverter
+systemctl start subconverter
 
-# 5. Build sub-web-modify frontend without Docker
+# 6. Build sub-web-modify frontend
+echo "[5/9] 构建 sub-web-modify 前端"
 cd /opt
-git clone https://github.com/about300/sub-web-modify.git /opt/sub-web-modify
+git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
-sudo npm install
-sudo npm run build
+npm install
+npm run build
 
-# 6. Install S-UI (local-only)
+# 7. Install S-UI (for managing VLESS nodes and settings)
+echo "[6/9] 安装 S-UI 面板"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-# 7. Obtain TLS certificates using acme.sh with Cloudflare DNS-01
-export CF_Email="$cf_email"
-export CF_Token="$cf_token"
-sudo mkdir -p /etc/nginx/ssl
-~/.acme.sh/acme.sh --issue -d "$domain" --dns dns_cf  # Issue cert via DNS-01 (Cloudflare)
-~/.acme.sh/acme.sh --install-cert -d "$domain" \
-    --key-file /etc/nginx/ssl/$domain.key \
-    --fullchain-file /etc/nginx/ssl/$domain.crt \
-    --reloadcmd "systemctl reload nginx"
+# 8. Install AdGuard Home for DNS filtering
+echo "[7/9] 安装 AdGuard Home"
+curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
 
-# 8. Configure Nginx:
-sudo tee /etc/nginx/conf.d/$domain.conf > /dev/null <<EOF
+# 9. Configure Nginx (HTTP/HTTPS and reverse proxy)
+echo "[8/9] 配置 Nginx"
+cat >/etc/nginx/sites-available/$DOMAIN.conf <<EOF
 server {
     listen 80;
-    server_name $domain;
+    server_name $DOMAIN;
     return 301 https://\$host\$request_uri;
 }
+
 server {
     listen 443 ssl http2;
-    server_name $domain;
+    server_name $DOMAIN;
 
-    ssl_certificate     /etc/nginx/ssl/$domain/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/$domain/key.pem;
+    ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
     root /var/www/html;
     index index.html;
@@ -83,16 +97,25 @@ server {
     location /subconvert/ {
         proxy_pass http://127.0.0.1:8090/;
     }
+
+    # WebSocket proxy for VLESS (SNI-based routing)
+    location /vless/ {
+        proxy_pass http://127.0.0.1:443/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
 }
 EOF
 
 # Test and restart nginx
-sudo nginx -t
-sudo systemctl restart nginx
+nginx -t
+systemctl restart nginx
 
-# 9. Configure Xray (VLESS on port 443 with TLS and fallback to Nginx)
+# 10. Configure Xray (VLESS and Reality)
 uuid=$(xray uuid)
-sudo tee /usr/local/etc/xray/config.json > /dev/null <<EOF
+cat >/usr/local/etc/xray/config.json <<EOF
 {
   "log": { "loglevel": "warning" },
   "inbounds": [{
@@ -110,8 +133,8 @@ sudo tee /usr/local/etc/xray/config.json > /dev/null <<EOF
       "security": "tls",
       "tlsSettings": {
         "certificates": [{ 
-          "certificateFile": "/etc/nginx/ssl/$domain.crt",
-          "keyFile": "/etc/nginx/ssl/$domain.key"
+          "certificateFile": "/etc/nginx/ssl/$DOMAIN.crt",
+          "keyFile": "/etc/nginx/ssl/$DOMAIN.key"
         }]
       }
     }
@@ -120,23 +143,18 @@ sudo tee /usr/local/etc/xray/config.json > /dev/null <<EOF
 EOF
 
 # Restart Xray
-sudo systemctl restart xray
+systemctl restart xray
 
-# 10. Configure UFW firewall (allow required ports)
-sudo ufw allow 22        # SSH
-sudo ufw allow 53        # DNS (AdGuard)
-sudo ufw allow 80        # HTTP
-sudo ufw allow 443       # HTTPS/VLESS
-sudo ufw allow 3000      # AdGuard Home UI
-sudo ufw allow 25500     # SubConverter backend
-sudo ufw allow 8445      # (if needed)
-sudo ufw allow 8446      # (if needed)
-sudo ufw --force enable
+# 11. Final configuration and services enablement
+systemctl enable nginx
+systemctl enable xray
+systemctl enable AdGuardHome
+systemctl enable s-ui
 
-# 11. Enable services on boot (Nginx, Xray, AdGuard, S-UI are set by their installers)
-sudo systemctl enable nginx
-sudo systemctl enable xray
-sudo systemctl enable AdGuardHome
-sudo systemctl enable s-ui
-
-echo "Setup complete! Access the homepage at https://$domain and the SubConverter UI at https://$domain/subconvert"
+echo "配置完成！"
+echo "--------------------------------------"
+echo "访问主页: https://$DOMAIN"
+echo "订阅转换 UI: https://$DOMAIN/subconvert"
+echo "S-UI 面板: https://$DOMAIN/ui"
+echo "--------------------------------------"
+echo "Reality/VLESS 请在 S-UI 中设置，使用同一个域名和443端口"

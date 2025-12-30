@@ -203,6 +203,11 @@ if ! grep -q "include /etc/nginx/stream.conf;" /etc/nginx/nginx.conf; then
     echo "include /etc/nginx/stream.conf;" >> /etc/nginx/nginx.conf
 fi
 
+# 禁用默认的 Nginx 配置文件，避免干扰
+if [ -f /etc/nginx/sites-enabled/default ]; then
+    rm /etc/nginx/sites-enabled/default
+fi
+
 # 验证配置并重启 Nginx
 nginx -t
 systemctl restart nginx

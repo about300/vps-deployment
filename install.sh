@@ -5,13 +5,31 @@ echo "======================================"
 echo " VPS 全栈部署（Web + VLESS + TLS + Nginx + AdGuard Home）"
 echo "======================================"
 
+# 交互输入 Cloudflare API 认证
+read -rp "请输入 Cloudflare API 电子邮件地址: " CF_EMAIL
+read -rp "请输入 Cloudflare API 密钥: " CF_API_KEY
+
 # 交互输入域名
 read -rp "请输入 Web 域名（如 web.mycloudshare.org）: " WEB_DOMAIN
+
+# 配置 Cloudflare API 环境变量
+export CF_API_EMAIL=$CF_EMAIL
+export CF_API_KEY=$CF_API_KEY
+export CF_DNS_API="https://api.cloudflare.com/client/v4"
+export CF_ZONE_ID=$(curl -s -X GET "$CF_DNS_API/zones?name=$WEB_DOMAIN" \
+  -H "X-Auth-Email: $CF_API_EMAIL" \
+  -H "X-Auth-Key: $CF_API_KEY" | jq -r '.result[0].id')
+
+# 如果没有获取到 Zone ID，则退出
+if [ -z "$CF_ZONE_ID" ]; then
+  echo "无法获取 Cloudflare Zone ID，请检查域名和 API 权限。"
+  exit 1
+fi
 
 echo "[1/8] 更新系统"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx \
-               build-essential ca-certificates lsb-release
+               build-essential ca-certificates lsb-release jq
 
 echo "[2/8] 防火墙设置"
 ufw allow 22
@@ -27,15 +45,17 @@ if [ ! -d ~/.acme.sh ]; then
   curl https://get.acme.sh | sh
 fi
 source ~/.bashrc
-~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
-mkdir -p /etc/nginx/ssl/$WEB_DOMAIN
-
-echo "[4/8] 申请 SSL 证书"
-~/.acme.sh/acme.sh --issue --dns dns_cf -d "$WEB_DOMAIN"
-~/.acme.sh/acme.sh --install-cert -d "$WEB_DOMAIN" \
-  --key-file /etc/nginx/ssl/$WEB_DOMAIN/key.pem \
-  --fullchain-file /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem
+# 检查证书是否已经存在
+if [ -f "/etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem" ]; then
+  echo "证书已经存在，跳过证书申请步骤。"
+else
+  echo "[4/8] 申请 SSL 证书"
+  ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$WEB_DOMAIN" \
+    --key-file /etc/nginx/ssl/$WEB_DOMAIN/key.pem \
+    --fullchain-file /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem \
+    --dns-api $CF_API_KEY --accountemail $CF_EMAIL
+fi
 
 echo "[5/8] 安装 SubConverter 后端"
 mkdir -p /opt/subconverter

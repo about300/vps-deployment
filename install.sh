@@ -1,198 +1,129 @@
-#!/usr/bin/env bash
-set -e
+#!/bin/bash
 
-echo "======================================="
-echo " VPS 全栈部署（Web + Sub + Reality）"
-echo " - 搜索主页（about300/vps-deployment/web）"
-echo " - SubConverter 本地后端 (25500)"
-echo " - sub-web-modify 前端"
-echo " - Nginx stream + Reality 共用 443"
-echo " - Cloudflare DNS-01 + Let's Encrypt"
-echo "======================================="
+# 1. Prompt for domain and Cloudflare API credentials
+read -p "Main domain (e.g. web.example.com): " domain
+read -p "Cloudflare Email: " cf_email
+read -p "Cloudflare Global API Token: " cf_token
 
-# ---------- 交互 ----------
-read -rp "请输入【主站域名】（如 web.mycloudshare.org）： " WEB_DOMAIN
-read -rp "请输入【Reality 域名】（如 web.vl.mycloudshare.org，若不设置可为空）： " VL_DOMAIN
+# 2. Install Nginx (with HTTP + stream modules) and Xray-core
+#    (Nginx and Xray can be installed via apt and the official Xray script:contentReference[oaicite:0]{index=0})
+sudo apt update
+sudo apt install -y nginx curl socat
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install  # Install Xray-core:contentReference[oaicite:1]{index=1}
 
-# ---------- 配置 Cloudflare API ----------
-export CF_Token
-read -rsp "请输入 Cloudflare API Token（DNS 编辑权限）: " CF_Token
-echo
-export CF_Account_ID
-read -rp "请输入 Cloudflare Account ID（可留空）: " CF_Account_ID
-
-# ---------- 基础更新 ----------
-echo "[1/12] 系统更新 & 安装基础组件"
-apt update -y
-apt install -y curl wget git unzip socat cron ufw nginx build-essential
-
-# ---------- 防火墙 ----------
-echo "[2/12] 防火墙配置"
-ufw allow 22
-ufw allow 80
-ufw allow 443
-ufw allow 53
-ufw allow 2550
-ufw allow 3000
-ufw allow 5001
-ufw allow 8096
-ufw allow 8445
-ufw allow 8446
-ufw --force enable
-
-# ---------- 安装 acme.sh ----------
-echo "[3/12] 安装 acme.sh (Let's Encrypt)"
-if [ ! -d /root/.acme.sh ]; then
-  curl https://get.acme.sh | sh
-fi
-source ~/.bashrc
-~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-
-# ---------- 申请证书 ----------
-echo "[4/12] 申请 SSL 证书"
-issue_cert () {
-  local domain=$1
-  if [ ! -f "/etc/nginx/ssl/$domain/fullchain.pem" ]; then
-    echo "申请证书：$domain"
-    mkdir -p /etc/nginx/ssl/$domain
-    ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$domain"
-    ~/.acme.sh/acme.sh --install-cert -d "$domain" \
-      --key-file       /etc/nginx/ssl/$domain/key.pem \
-      --fullchain-file /etc/nginx/ssl/$domain/fullchain.pem
-  else
-    echo "证书已存在，跳过：$domain"
-  fi
-}
-
-issue_cert "$WEB_DOMAIN"
-if [ -n "$VL_DOMAIN" ]; then
-  issue_cert "$VL_DOMAIN"
-fi
-
-# ---------- 搜索主页 ----------
-echo "[5/12] 设置搜索主页（about300/vps-deployment/web）"
+# 3. Clone and deploy the web homepage (with search bar)
+#    (Using the about300/vps-deployment web frontend as the homepage)
+sudo mkdir -p /var/www/html
+sudo chown -R www-data:www-data /var/www/html
 if [ ! -d /opt/vps-deployment ]; then
-  git clone https://github.com/about300/vps-deployment /opt/vps-deployment
-else
-  cd /opt/vps-deployment && git pull
+    sudo apt install -y git
+    sudo git clone https://github.com/about300/vps-deployment.git /opt/vps-deployment
 fi
+sudo cp -r /opt/vps-deployment/web/* /var/www/html/
+sudo chown -R www-data:www-data /var/www/html
 
-# ---------- SubConverter ----------
-echo "[6/12] 安装 SubConverter 后端"
-if [ ! -f /opt/subconverter/subconverter ]; then
-  mkdir -p /opt/subconverter
-  wget -O /opt/subconverter/subconverter \
-    https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
-  chmod +x /opt/subconverter/subconverter
-fi
+# 4. Deploy Subscription Converter front-end (sub-web-modify) via Docker:contentReference[oaicite:2]{index=2}
+#    and run SubConverter backend on port 25500
+sudo apt install -y docker.io
+sudo docker run -d --restart always -p 8090:80 --name sub-web-modify youshandefeiyang/sub-web-modify  # front-end on localhost:8090:contentReference[oaicite:3]{index=3}
+sudo docker run -d --restart always -p 25500:25500 --name subconverter tindy2013/subconverter  # backend on port 25500
 
-cat >/etc/systemd/system/subconverter.service <<EOF
-[Unit]
-Description=SubConverter
-After=network.target
+# 5. Install AdGuard Home (DNS/anti-ad service) on port 3000:contentReference[oaicite:4]{index=4}
+#    (Download the latest release and install as a service)
+AGH_VERSION=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+wget -O AdGuardHome.tar.gz https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.tar.gz
+tar xzf AdGuardHome.tar.gz
+cd AdGuardHome
+sudo ./AdGuardHome -s install  # Install AdGuardHome as a system service:contentReference[oaicite:5]{index=5}
+cd ..
+rm AdGuardHome.tar.gz
 
-[Service]
-ExecStart=/opt/subconverter/subconverter
-Restart=always
+# 6. Install S-UI panel (local-only) using the official install script:contentReference[oaicite:6]{index=6}
+bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# 7. Obtain TLS certificates using acme.sh with Cloudflare DNS-01:contentReference[oaicite:7]{index=7}:contentReference[oaicite:8]{index=8}
+export CF_Email="$cf_email"
+export CF_Token="$cf_token"
+sudo mkdir -p /etc/nginx/ssl
+~/.acme.sh/acme.sh --issue -d "$domain" --dns dns_cf  # Issue cert via DNS-01 (Cloudflare):contentReference[oaicite:9]{index=9}
+~/.acme.sh/acme.sh --install-cert -d "$domain" \
+    --key-file /etc/nginx/ssl/$domain.key \
+    --fullchain-file /etc/nginx/ssl/$domain.crt \
+    --reloadcmd "systemctl reload nginx"  # Install cert for Nginx (auto-reload):contentReference[oaicite:10]{index=10}
 
-systemctl daemon-reload
-systemctl enable subconverter
-systemctl restart subconverter
-
-# ---------- Node.js ----------
-echo "[7/12] 安装 Node.js LTS"
-if ! command -v node >/dev/null; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  apt install -y nodejs
-fi
-
-# ---------- sub-web-modify ----------
-echo "[8/12] 构建 sub-web-modify 前端"
-if [ ! -d /opt/sub-web-modify ]; then
-  git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
-  cd /opt/sub-web-modify
-  npm install
-  npm run build
-fi
-
-# ---------- S-UI 安装 ----------
-echo "[9/12] 安装 S-UI（仅本地监听）"
-if [ ! -d /usr/local/s-ui ]; then
-  bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
-fi
-
-# ---------- Nginx 配置 ----------
-echo "[10/12] 配置 Nginx（Web + SubConvert）"
-cat >/etc/nginx/conf.d/web.conf <<EOF
+# 8. Configure Nginx:
+#    - Redirect HTTP→HTTPS
+#    - Serve web and proxy /subconvert to Docker
+sudo tee /etc/nginx/conf.d/$domain.conf > /dev/null <<EOF
 server {
     listen 80;
-    server_name $WEB_DOMAIN;
+    listen [::]:80;
+    server_name $domain;
     return 301 https://\$host\$request_uri;
 }
-
 server {
-    listen 443 ssl http2;
-    server_name $WEB_DOMAIN;
-
-    ssl_certificate     /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/$WEB_DOMAIN/key.pem;
-
-    root /opt/vps-deployment/web;
+    # Listen only on localhost for Xray fallback (HTTP/2 with PROXY protocol)
+    listen 127.0.0.1:20002 http2 proxy_protocol;
+    server_name $domain;
+    root /var/www/html;
     index index.html;
 
-    location / {
-        try_files \$uri \$uri/ /index.html;
-    }
-
+    # Proxy /subconvert to the SubConverter frontend container
     location /subconvert/ {
-        alias /opt/sub-web-modify/dist/;
-        index index.html;
-        try_files \$uri \$uri/ /index.html;
-    }
-
-    location /sub/api/ {
-        proxy_pass http://127.0.0.1:25500/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_pass http://127.0.0.1:8090/;
     }
 }
 EOF
+sudo nginx -t
+sudo systemctl restart nginx
 
-# ---------- Nginx stream 配置 ----------
-echo "[11/12] 配置 Nginx stream（Reality 共用 443）"
-cat >/etc/nginx/stream.conf <<EOF
-stream {
-    map \$ssl_preread_server_name \$backend {
-        $VL_DOMAIN 127.0.0.1:4433;
-        default    127.0.0.1:4430;
+# 9. Configure Xray (VLESS on port 443 with TLS and fallback to Nginx)
+#    Generate a UUID for the VLESS client
+uuid=$(xray uuid)
+#    Write Xray config to use port 443, TLS with our cert, and fallback to 127.0.0.1:20002 for web traffic.
+sudo tee /usr/local/etc/xray/config.json > /dev/null <<EOF
+{
+  "log": { "loglevel": "warning" },
+  "inbounds": [{
+    "port": 443,
+    "protocol": "vless",
+    "settings": {
+      "clients": [{ "id": "$uuid", "level": 0, "flow": "xtls-rprx-direct" }],
+      "decryption": "none",
+      "fallbacks": [
+        { "alpn": "h2", "dest": 20002, "xver": 1 }
+      ]
+    },
+    "streamSettings": {
+      "network": "tcp",
+      "security": "tls",
+      "tlsSettings": {
+        "certificates": [{ 
+          "certificateFile": "/etc/nginx/ssl/$domain.crt",
+          "keyFile": "/etc/nginx/ssl/$domain.key"
+        }]
+      }
     }
-
-    server {
-        listen 443 reuseport;
-        ssl_preread on;
-        proxy_pass \$backend;
-    }
+  }]
 }
 EOF
+sudo systemctl restart xray
 
-grep -q "stream.conf" /etc/nginx/nginx.conf || \
-echo "include /etc/nginx/stream.conf;" >> /etc/nginx/nginx.conf
+# 10. Configure UFW firewall (allow required ports):contentReference[oaicite:11]{index=11}
+sudo ufw allow 22        # SSH:contentReference[oaicite:12]{index=12}
+sudo ufw allow 53        # DNS (AdGuard)
+sudo ufw allow 80        # HTTP
+sudo ufw allow 443       # HTTPS/VLESS
+sudo ufw allow 3000      # AdGuard Home UI
+sudo ufw allow 25500     # SubConverter backend
+sudo ufw allow 8445      # (if needed, as per spec)
+sudo ufw allow 8446      # (if needed)
+sudo ufw allow 5001      # (if needed)
+sudo ufw allow 8096      # (if needed)
+sudo ufw --force enable
 
-nginx -t
-systemctl restart nginx
-
-# ---------- 完成 ----------
-echo "[12/12] 完成 🎉"
-echo "---------------------------------------"
-echo "主页: https://$WEB_DOMAIN"
-echo "订阅转换: https://$WEB_DOMAIN/subconvert"
-echo "Sub API: https://$WEB_DOMAIN/sub/api/"
-echo
-echo "Reality 域名（S-UI 中使用）:"
-echo "  $VL_DOMAIN"
-echo "  监听端口：4433（示例）"
-echo "---------------------------------------"
+# 11. Enable services on boot (Nginx, Xray, AdGuard, S-UI are set by their installers)
+sudo systemctl enable nginx
+sudo systemctl enable xray
+sudo systemctl enable AdGuardHome
+sudo systemctl enable s-ui

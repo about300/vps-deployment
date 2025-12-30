@@ -198,9 +198,12 @@ stream {
 }
 EOF
 
-grep -q "stream.conf" /etc/nginx/nginx.conf || \
-echo "include /etc/nginx/stream.conf;" >> /etc/nginx/nginx.conf
+# 确保在 nginx.conf 中正确引入 stream.conf 配置
+if ! grep -q "include /etc/nginx/stream.conf;" /etc/nginx/nginx.conf; then
+    echo "include /etc/nginx/stream.conf;" >> /etc/nginx/nginx.conf
+fi
 
+# 验证配置并重启 Nginx
 nginx -t
 systemctl restart nginx
 
@@ -209,4 +212,7 @@ echo "======================================="
 echo "部署完成 🎉"
 echo "---------------------------------------"
 echo "主页: https://$WEB_DOMAIN"
-echo
+echo "AdGuard Home: https://$WEB_DOMAIN/adguard/"
+echo "S-UI 面板: https://$WEB_DOMAIN/sui/"
+echo "SubConvert: https://$WEB_DOMAIN/subconvert/"
+echo "======================================="

@@ -1,41 +1,43 @@
 #!/usr/bin/env bash
 set -e
 
-# 1. Prompt for domain and Cloudflare API credentials
-read -p "请输入主域名（如 web.mycloudshare.org）: " DOMAIN
-read -p "请输入 Cloudflare 邮箱: " CF_EMAIL
-read -p "请输入 Cloudflare API Token: " CF_TOKEN
+echo "======================================"
+echo " VPS 全栈部署（Web + VLESS + TLS + Nginx + AdGuard Home）"
+echo "======================================"
 
-# 2. Update system and install dependencies
-echo "[1/9] 更新系统"
+# 交互输入域名
+read -rp "请输入 Web 域名（如 web.mycloudshare.org）: " WEB_DOMAIN
+
+echo "[1/8] 更新系统"
 apt update -y
-apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 nodejs npm
+apt install -y curl wget git unzip socat cron ufw nginx \
+               build-essential ca-certificates lsb-release
 
-# 3. Firewall setup
-echo "[2/9] 配置防火墙"
-ufw allow 22        # SSH
-ufw allow 80        # HTTP
-ufw allow 443       # HTTPS/VLESS
-ufw allow 3000      # AdGuard Home UI
-ufw allow 25500     # SubConverter backend
-ufw allow 8445      # (if needed)
-ufw allow 8446      # (if needed)
+echo "[2/8] 防火墙设置"
+ufw allow 22
+ufw allow 80
+ufw allow 443
+ufw allow 3000  # AdGuard Home
+ufw allow 8445  # 备用
+ufw allow 25500 # 订阅转换
 ufw --force enable
 
-# 4. Install acme.sh and obtain SSL certificate (Let’s Encrypt)
-echo "[3/9] 安装 acme.sh 并获取 SSL 证书"
-curl https://get.acme.sh | sh
+echo "[3/8] 安装 acme.sh (Cloudflare DNS-01 Let's Encrypt)"
+if [ ! -d ~/.acme.sh ]; then
+  curl https://get.acme.sh | sh
+fi
 source ~/.bashrc
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-mkdir -p /etc/nginx/ssl/$DOMAIN
-~/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone || true
-~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-  --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
-  --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
-  --reloadcmd "systemctl reload nginx"
 
-# 5. Install SubConverter backend (without Docker)
-echo "[4/9] 安装 SubConverter 后端"
+mkdir -p /etc/nginx/ssl/$WEB_DOMAIN
+
+echo "[4/8] 申请 SSL 证书"
+~/.acme.sh/acme.sh --issue --dns dns_cf -d "$WEB_DOMAIN"
+~/.acme.sh/acme.sh --install-cert -d "$WEB_DOMAIN" \
+  --key-file /etc/nginx/ssl/$WEB_DOMAIN/key.pem \
+  --fullchain-file /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem
+
+echo "[5/8] 安装 SubConverter 后端"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
 wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
@@ -55,106 +57,83 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable subconverter
-systemctl start subconverter
+systemctl enable --now subconverter
 
-# 6. Build sub-web-modify frontend
-echo "[5/9] 构建 sub-web-modify 前端"
-cd /opt
+echo "[6/8] 构建 sub-web-modify"
+rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
 npm install
 npm run build
 
-# 7. Install S-UI (for managing VLESS nodes and settings)
-echo "[6/9] 安装 S-UI 面板"
-bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+echo "[7/8] 安装 AdGuard Home"
+curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
 
-# 8. Install AdGuard Home for DNS filtering
-echo "[7/9] 安装 AdGuard Home"
-curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+echo "[8/8] 配置 Nginx 使用 SNI 区分不同服务"
 
-# 9. Configure Nginx (HTTP/HTTPS and reverse proxy)
-echo "[8/9] 配置 Nginx"
-cat >/etc/nginx/sites-available/$DOMAIN.conf <<EOF
-server {
-    listen 80;
-    server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
-}
+cat >/etc/nginx/nginx.conf <<EOF
+stream {
+    # Web 服务配置
+    server {
+        listen 443 ssl;
+        server_name $WEB_DOMAIN;  # Web 域名
 
-server {
-    listen 443 ssl http2;
-    server_name $DOMAIN;
+        ssl_certificate /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem;
+        ssl_certificate_key /etc/nginx/ssl/$WEB_DOMAIN/key.pem;
 
-    ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
-
-    root /var/www/html;
-    index index.html;
-
-    # Proxy /subconvert to the SubConverter frontend
-    location /subconvert/ {
-        proxy_pass http://127.0.0.1:8090/;
+        proxy_pass 127.0.0.1:8080;  # Web 服务监听端口
     }
 
-    # WebSocket proxy for VLESS (SNI-based routing)
-    location /vless/ {
-        proxy_pass http://127.0.0.1:443/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+    # VLESS 服务配置
+    server {
+        listen 443 ssl;
+        server_name vless.$WEB_DOMAIN;  # VLESS 域名
+
+        ssl_certificate /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem;
+        ssl_certificate_key /etc/nginx/ssl/$WEB_DOMAIN/key.pem;
+
+        proxy_pass 127.0.0.1:443;  # VLESS 服务监听端口（Xray 或 V2Ray）
+    }
+
+    # AdGuard Home 服务配置
+    server {
+        listen 443 ssl;
+        server_name adguard.$WEB_DOMAIN;  # AdGuard Home 域名
+
+        ssl_certificate /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem;
+        ssl_certificate_key /etc/nginx/ssl/$WEB_DOMAIN/key.pem;
+
+        proxy_pass 127.0.0.1:3000;  # AdGuard Home 端口
+    }
+}
+
+http {
+    server {
+        listen 443 ssl http2;
+        server_name $WEB_DOMAIN;  # Web 域名
+
+        ssl_certificate /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem;
+        ssl_certificate_key /etc/nginx/ssl/$WEB_DOMAIN/key.pem;
+
+        root /var/www/web-home;
+        index index.html;
+
+        location / {
+            try_files \$uri \$uri/ /index.html;
+        }
     }
 }
 EOF
 
-# Test and restart nginx
+echo "[9/9] 启动 Nginx 和服务"
 nginx -t
-systemctl restart nginx
+systemctl reload nginx
 
-# 10. Configure Xray (VLESS and Reality)
-uuid=$(xray uuid)
-cat >/usr/local/etc/xray/config.json <<EOF
-{
-  "log": { "loglevel": "warning" },
-  "inbounds": [{
-    "port": 443,
-    "protocol": "vless",
-    "settings": {
-      "clients": [{ "id": "$uuid", "level": 0, "flow": "xtls-rprx-direct" }],
-      "decryption": "none",
-      "fallbacks": [
-        { "alpn": "h2", "dest": 20002, "xver": 1 }
-      ]
-    },
-    "streamSettings": {
-      "network": "tcp",
-      "security": "tls",
-      "tlsSettings": {
-        "certificates": [{ 
-          "certificateFile": "/etc/nginx/ssl/$DOMAIN.crt",
-          "keyFile": "/etc/nginx/ssl/$DOMAIN.key"
-        }]
-      }
-    }
-  }]
-}
-EOF
-
-# Restart Xray
-systemctl restart xray
-
-# 11. Final configuration and services enablement
-systemctl enable nginx
-systemctl enable xray
-systemctl enable AdGuardHome
-systemctl enable s-ui
-
-echo "配置完成！"
-echo "--------------------------------------"
-echo "访问主页: https://$DOMAIN"
-echo "订阅转换 UI: https://$DOMAIN/subconvert"
-echo "S-UI 面板: https://$DOMAIN/ui"
-echo "--------------------------------------"
-echo "Reality/VLESS 请在 S-UI 中设置，使用同一个域名和443端口"
+echo "======================================"
+echo "部署完成 🎉"
+echo "Web: https://$WEB_DOMAIN"
+echo "订阅转换: https://$WEB_DOMAIN/subconvert/"
+echo "S-UI 面板访问方式：ssh -L 2095:127.0.0.1:2095 root@服务器IP"
+echo "VLESS 服务地址: https://vless.$WEB_DOMAIN/"
+echo "AdGuard Home 管理地址: https://adguard.$WEB_DOMAIN/"
+echo "======================================"

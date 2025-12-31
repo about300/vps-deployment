@@ -1,69 +1,62 @@
 #!/usr/bin/env bash
 set -e
 
-echo "======================================"
-echo " 一键部署 全栈服务"
-echo " - VLESS + Reality 共用 443 端口"
-echo " - SubConverter 后端 + sub-web-modify"
-echo " - S-UI 面板"
-echo " - AdGuard Home"
-echo " - Let's Encrypt DNS-01"
-echo "======================================"
+echo "===== VPS Full Stack Deployment ====="
 
-# 输入域名与 Cloudflare 配置信息
-read -rp "请输入主域名（如 mycloudshare.org）: " DOMAIN
-read -rp "请输入 Cloudflare 邮箱: " CF_EMAIL
-read -rp "请输入 Cloudflare API Token: " CF_TOKEN
+# Step 1: Input your domain and Cloudflare credentials
+read -rp "Please enter your domain (e.g., web.mycloudshare.org): " DOMAIN
+read -rp "Please enter your Cloudflare email: " CF_Email
+read -rp "Please enter your Cloudflare API Token: " CF_Token
 
-# 设置 Cloudflare API Token
-export CF_Email="$CF_EMAIL"
-export CF_Token="$CF_TOKEN"
+export CF_Email
+export CF_Token
 
-# 更新系统
-echo "[1/9] 更新系统 & 安装基础组件"
+echo "[1/12] Update system and install dependencies"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
 
-# 防火墙设置
-echo "[2/9] 防火墙放行必要端口"
+echo "[2/12] Configure firewall"
 ufw allow 22
 ufw allow 80
 ufw allow 443
+ufw allow 8443
 ufw allow 3000
 ufw allow 8445
+ufw allow 53
+ufw allow 2550
 ufw --force enable
 
-# 安装 acme.sh
-echo "[3/9] 安装 acme.sh"
+echo "[3/12] Install acme.sh for DNS-01 verification"
 curl https://get.acme.sh | sh
 source ~/.bashrc
+
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
-# 使用 DNS-01 进行 Let's Encrypt 证书申请
-echo "[4/9] 使用 DNS-01 申请证书"
 mkdir -p /etc/nginx/ssl/$DOMAIN
+
+# Use DNS-01 verification via Cloudflare
+echo "[4/12] Issue SSL certificate via Cloudflare"
 ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
+
+# Install certificate to Nginx
 ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
   --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
   --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
   --reloadcmd "systemctl reload nginx"
 
-# 安装 SubConverter 后端
-echo "[5/9] 安装 SubConverter 后端"
+echo "[5/12] Install SubConverter Backend"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
 wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
 chmod +x subconverter
 
-# 创建 SubConverter 服务
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
-Description=SubConverter
+Description=SubConverter Service
 After=network.target
 
 [Service]
 ExecStart=/opt/subconverter/subconverter
-WorkingDirectory=/opt/subconverter
 Restart=always
 RestartSec=3
 
@@ -75,71 +68,66 @@ systemctl daemon-reload
 systemctl enable subconverter
 systemctl restart subconverter
 
-# 安装 Node.js (LTS)
-echo "[6/9] 安装 Node.js (LTS)"
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 
+echo "[6/12] Install Node.js (LTS)"
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs
 
-# 构建 sub-web-modify 前端
-echo "[7/9] 构建 sub-web-modify"
+echo "[7/12] Build sub-web-modify (from about300 repo)"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
 npm install
 npm run build
 
-# 安装 S-UI 面板（仅安装，不暴露）
-echo "[8/9] 安装 S-UI 面板"
+echo "[8/12] Install S-UI Panel (only local listening)"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-# nginx 配置（共用 443 端口，nginx 反向代理）
-echo "[9/9] 配置 nginx"
+echo "[9/12] Configure Nginx for Web and API"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
-    listen 80;
-    server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
-}
-
-server {
     listen 443 ssl http2;
-    server_name $DOMAIN;
+    server_name new.mycloudshare.org;
 
-    ssl_certificate /etc/nginx/ssl/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
+    ssl_certificate     /etc/nginx/ssl/new.mycloudshare.org/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/new.mycloudshare.org/key.pem;
 
-    root /opt/sub-web-modify/dist;
+    # ① 搜索主页（真正的首页）
+    root /opt/web-home;
     index index.html;
 
     location / {
-        try_files \$uri \$uri/ /index.html;
+        try_files $uri $uri/ /index.html;
     }
 
+    # ② 订阅转换前端
+    location /subconvert/ {
+        alias /opt/sub-web/dist/;
+        try_files $uri $uri/ /subconvert/index.html;
+    }
+
+    # ③ 订阅转换后端（本地 subconverter）
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$remote_addr;
-    }
-
-    # S-UI 面板反向代理
-    location /ui/ {
-        proxy_pass http://127.0.0.1:2095/app/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
     }
 }
+
 EOF
 
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx
+nginx -t
+systemctl reload nginx
 
-echo "======================================"
-echo "🎉 部署完成！"
-echo "Web 页面： https://$DOMAIN"
-echo "SubConverter API： https://$DOMAIN/sub/api/"
-echo "S-UI 面板： https://$DOMAIN/ui/"
-echo "======================================"
-echo "请根据需要配置 VLESS + Reality、AdGuard Home 及其他服务。"
+echo "[10/12] Configure DNS-01 for Let's Encrypt"
+echo "[INFO] Using Cloudflare API for DNS-01"
+
+echo "[11/12] Install AdGuard Home (Port 3000)"
+curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+
+echo "[12/12] Finish 🎉"
+echo "====================================="
+echo "Web Home: https://$DOMAIN"
+echo "SubConverter API: https://$DOMAIN/sub/api/"
+echo "S-UI Panel: http://127.0.0.1:2095"
+echo "====================================="

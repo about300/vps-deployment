@@ -1,55 +1,61 @@
 #!/usr/bin/env bash
 set -e
 
-echo "===== VPS 全栈部署 · Reality + Web 共用 443 ====="
+echo "======================================"
+echo " 一键部署 全栈服务"
+echo " - VLESS + Reality 共用 443 端口"
+echo " - SubConverter 后端 + sub-web-modify"
+echo " - S-UI 面板"
+echo " - AdGuard Home"
+echo " - Let's Encrypt DNS-01"
+echo "======================================"
 
-read -rp "请输入 WEB 域名 (如 web.mycloudshare.org): " WEB_DOMAIN
-read -rp "请输入 Reality 域名 (可相同，留空则同 WEB): " REALITY_DOMAIN
-REALITY_DOMAIN=${REALITY_DOMAIN:-$WEB_DOMAIN}
+# 输入域名与 Cloudflare 配置信息
+read -rp "请输入主域名（如 mycloudshare.org）: " DOMAIN
+read -rp "请输入 Cloudflare 邮箱: " CF_EMAIL
+read -rp "请输入 Cloudflare API Token: " CF_TOKEN
 
-read -rp "请输入 Cloudflare API Token: " CF_Token
-read -rp "请输入 Cloudflare Account ID (可留空): " CF_Account_ID
+# 设置 Cloudflare API Token
+export CF_Email="$CF_EMAIL"
+export CF_Token="$CF_TOKEN"
 
-export CF_Token
-[ -n "$CF_Account_ID" ] && export CF_Account_ID
-
-echo
-echo "WEB:      $WEB_DOMAIN"
-echo "REALITY:  $REALITY_DOMAIN"
-echo "==============================================="
-
-### 1. 系统基础
+# 更新系统
+echo "[1/9] 更新系统 & 安装基础组件"
 apt update -y
-apt install -y curl wget git unzip socat cron ufw nginx build-essential
+apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
 
-### 2. 防火墙
-for p in 22 80 443 3000 5001 8096 8445 8446 53 25500; do
-  ufw allow "$p"
-done
+# 防火墙设置
+echo "[2/9] 防火墙放行必要端口"
+ufw allow 22
+ufw allow 80
+ufw allow 443
+ufw allow 3000
+ufw allow 8445
 ufw --force enable
 
-### 3. acme.sh（DNS-01 + Let's Encrypt）
-ACME="$HOME/.acme.sh/acme.sh"
-if [ ! -f "$ACME" ]; then
-  curl https://get.acme.sh | sh
-fi
+# 安装 acme.sh
+echo "[3/9] 安装 acme.sh"
+curl https://get.acme.sh | sh
+source ~/.bashrc
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
-"$ACME" --set-default-ca --server letsencrypt
-
-mkdir -p /etc/nginx/ssl/$WEB_DOMAIN
-
-"$ACME" --issue --dns dns_cf -d "$WEB_DOMAIN" -d "$REALITY_DOMAIN"
-"$ACME" --install-cert -d "$WEB_DOMAIN" \
-  --key-file       /etc/nginx/ssl/$WEB_DOMAIN/key.pem \
-  --fullchain-file /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem \
+# 使用 DNS-01 进行 Let's Encrypt 证书申请
+echo "[4/9] 使用 DNS-01 申请证书"
+mkdir -p /etc/nginx/ssl/$DOMAIN
+~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
+~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+  --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
+  --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
   --reloadcmd "systemctl reload nginx"
 
-### 4. SubConverter 后端（25500）
+# 安装 SubConverter 后端
+echo "[5/9] 安装 SubConverter 后端"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
 wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
 chmod +x subconverter
 
+# 创建 SubConverter 服务
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
 Description=SubConverter
@@ -57,74 +63,83 @@ After=network.target
 
 [Service]
 ExecStart=/opt/subconverter/subconverter
+WorkingDirectory=/opt/subconverter
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now subconverter
+systemctl enable subconverter
+systemctl restart subconverter
 
-### 5. Node.js
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+# 安装 Node.js (LTS)
+echo "[6/9] 安装 Node.js (LTS)"
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 
 apt install -y nodejs
 
-### 6. sub-web-modify（Vue 前端）
-rm -rf /opt/sub-web
-git clone https://github.com/about300/sub-web-modify /opt/sub-web
-cd /opt/sub-web
+# 构建 sub-web-modify 前端
+echo "[7/9] 构建 sub-web-modify"
+rm -rf /opt/sub-web-modify
+git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
+cd /opt/sub-web-modify
 npm install
 npm run build
 
-### 7. S-UI（Reality）
+# 安装 S-UI 面板（仅安装，不暴露）
+echo "[8/9] 安装 S-UI 面板"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-### 8. AdGuard Home
-curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
-
-### 9. Nginx（仅 HTTP，不用 stream）
-cat >/etc/nginx/conf.d/$WEB_DOMAIN.conf <<EOF
+# nginx 配置（共用 443 端口，nginx 反向代理）
+echo "[9/9] 配置 nginx"
+cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 80;
-    server_name $WEB_DOMAIN;
+    server_name $DOMAIN;
     return 301 https://\$host\$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name $WEB_DOMAIN;
+    server_name $DOMAIN;
 
-    ssl_certificate     /etc/nginx/ssl/$WEB_DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/$WEB_DOMAIN/key.pem;
+    ssl_certificate /etc/nginx/ssl/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    root /opt/sub-web/dist;
+    root /opt/sub-web-modify/dist;
     index index.html;
 
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    location /subconvert/ {
+    location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
+
+    # S-UI 面板反向代理
+    location /ui/ {
+        proxy_pass http://127.0.0.1:2095/app/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
 }
 EOF
 
-rm -f /etc/nginx/conf.d/default.conf
-nginx -t
-systemctl reload nginx
+ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
 
-echo
-echo "================= 部署完成 ================="
-echo "主页:        https://$WEB_DOMAIN"
-echo "订阅转换:    https://$WEB_DOMAIN/subconvert"
-echo
-echo "S-UI 面板（SSH 隧道）:"
-echo "ssh -L 2095:127.0.0.1:2095 root@服务器IP"
-echo
-echo "Reality SNI 建议:"
-echo "  $REALITY_DOMAIN"
-echo "============================================"
+echo "======================================"
+echo "🎉 部署完成！"
+echo "Web 页面： https://$DOMAIN"
+echo "SubConverter API： https://$DOMAIN/sub/api/"
+echo "S-UI 面板： https://$DOMAIN/ui/"
+echo "======================================"
+echo "请根据需要配置 VLESS + Reality、AdGuard Home 及其他服务。"

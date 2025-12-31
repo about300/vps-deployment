@@ -52,8 +52,9 @@ mkdir -p /etc/nginx/ssl/$DOMAIN
 echo "[5/9] 安装 SubConverter 后端"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
-wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
-chmod +x subconverter
+git clone https://github.com/about300/vps-deployment /opt/subconverter
+cd /opt/subconverter
+# Modify backend code/config here as needed
 
 # 创建 SubConverter 服务
 cat >/etc/systemd/system/subconverter.service <<EOF
@@ -85,6 +86,7 @@ echo "[7/9] 构建 sub-web-modify"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
+# Modify the frontend code for search functionality or other UI changes
 npm install
 npm run build
 
@@ -119,6 +121,15 @@ server {
         proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
+    }
+
+    # VLESS 流量反向代理
+    location /vless/ {
+        proxy_pass http://127.0.0.1:10000;  # VLESS 服务端口
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     # S-UI 面板反向代理

@@ -1,62 +1,62 @@
 #!/usr/bin/env bash
 set -e
 
-echo "===== VPS Full Stack Deployment ====="
+echo "======================================"
+echo " VPS 全栈部署 (DNS-01 + 共用 443 + VLESS)"
+echo "======================================"
 
-# Step 1: Input your domain and Cloudflare credentials
-read -rp "Please enter your domain (e.g., web.mycloudshare.org): " DOMAIN
-read -rp "Please enter your Cloudflare email: " CF_Email
-read -rp "Please enter your Cloudflare API Token: " CF_Token
+read -rp "请输入主域名 (如 web.mycloudshare.org): " DOMAIN
+read -rp "请输入 Cloudflare 邮箱: " CF_EMAIL
+read -rp "请输入 Cloudflare API Token: " CF_TOKEN
 
-export CF_Email
-export CF_Token
+export CF_Email="$CF_EMAIL"
+export CF_Token="$CF_TOKEN"
 
-echo "[1/12] Update system and install dependencies"
+echo "[1/10] 更新系统 & 安装依赖"
 apt update -y
-apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
+apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 nodejs npm
 
-echo "[2/12] Configure firewall"
+echo "[2/10] 防火墙设置"
 ufw allow 22
 ufw allow 80
 ufw allow 443
-ufw allow 8443
 ufw allow 3000
+ufw allow 25500
 ufw allow 8445
-ufw allow 53
-ufw allow 2550
 ufw --force enable
 
-echo "[3/12] Install acme.sh for DNS-01 verification"
+echo "[3/10] 安装 acme.sh（DNS-01 / Cloudflare）"
 curl https://get.acme.sh | sh
 source ~/.bashrc
-
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
 mkdir -p /etc/nginx/ssl/$DOMAIN
 
-# Use DNS-01 verification via Cloudflare
-echo "[4/12] Issue SSL certificate via Cloudflare"
+echo "[4/10] 获取 Let's Encrypt 证书"
 ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
-
-# Install certificate to Nginx
 ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-  --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
+  --key-file       /etc/nginx/ssl/$DOMAIN/key.pem \
   --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
-  --reloadcmd "systemctl reload nginx"
+  --reloadcmd     "systemctl reload nginx"
 
-echo "[5/12] Install SubConverter Backend"
-mkdir -p /opt/subconverter
-cd /opt/subconverter
-wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
-chmod +x subconverter
+echo "[5/10] 部署 subconvert 后端源码"
+if [ -d "/root/vps-deployment/subconvert" ]; then
+  echo "subconvert 源码存在"
+else
+  echo "⚠ 没有找到 subconvert 源码，请确认已 fork 并放到 vps-deployment/subconvert"
+  exit 1
+fi
 
-cat >/etc/systemd/system/subconverter.service <<EOF
+cd /root/vps-deployment/subconvert
+go build -o /opt/subconvert ./...
+
+cat >/etc/systemd/system/subconvert.service <<EOF
 [Unit]
-Description=SubConverter Service
+Description=subconvert Backend
 After=network.target
 
 [Service]
-ExecStart=/opt/subconverter/subconverter
+ExecStart=/opt/subconvert
 Restart=always
 RestartSec=3
 
@@ -65,69 +65,70 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable subconverter
-systemctl restart subconverter
+systemctl enable --now subconvert
 
-echo "[6/12] Install Node.js (LTS)"
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt install -y nodejs
-
-echo "[7/12] Build sub-web-modify (from about300 repo)"
-rm -rf /opt/sub-web-modify
-git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
-cd /opt/sub-web-modify
+echo "[6/10] 构建 sub-web-modify"
+cd /root/vps-deployment/sub-web-modify
 npm install
 npm run build
 
-echo "[8/12] Install S-UI Panel (only local listening)"
+echo "[7/10] 准备搜索主页"
+if [ -d "/root/vps-deployment/web" ]; then
+  mkdir -p /opt/web-home
+  cp -r /root/vps-deployment/web/* /opt/web-home/
+fi
+
+echo "[8/10] 安装 S-UI 面板"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-echo "[9/12] Configure Nginx for Web and API"
+echo "[9/10] 安装 AdGuard Home"
+curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+
+echo "[10/10] 写入 Nginx 配置"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
     listen 443 ssl http2;
-    server_name new.mycloudshare.org;
+    server_name $DOMAIN;
 
-    ssl_certificate     /etc/nginx/ssl/new.mycloudshare.org/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/new.mycloudshare.org/key.pem;
+    ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    # ① 搜索主页（真正的首页）
     root /opt/web-home;
     index index.html;
 
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 
-    # ② 订阅转换前端
     location /subconvert/ {
-        alias /opt/sub-web/dist/;
-        try_files $uri $uri/ /subconvert/index.html;
+        alias /root/vps-deployment/sub-web-modify/dist/;
+        index index.html;
+        try_files \$uri \$uri/ /subconvert/index.html;
     }
 
-    # ③ 订阅转换后端（本地 subconverter）
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
 }
-
 EOF
 
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
-nginx -t
-systemctl reload nginx
+nginx -t && systemctl reload nginx
 
-echo "[10/12] Configure DNS-01 for Let's Encrypt"
-echo "[INFO] Using Cloudflare API for DNS-01"
-
-echo "[11/12] Install AdGuard Home (Port 3000)"
-curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
-
-echo "[12/12] Finish 🎉"
-echo "====================================="
-echo "Web Home: https://$DOMAIN"
-echo "SubConverter API: https://$DOMAIN/sub/api/"
-echo "S-UI Panel: http://127.0.0.1:2095"
-echo "====================================="
+echo "======================================"
+echo "🎉 全部部署完成"
+echo "主页: https://$DOMAIN"
+echo "订阅转换: https://$DOMAIN/subconvert"
+echo "Sub API: http://127.0.0.1:25500/"
+echo "AdGuard Home: http://<你的IP>:3000"
+echo "S-UI 面板: ssh -L 2095:127.0.0.1:2095 root@你的IP"
+echo "======================================"

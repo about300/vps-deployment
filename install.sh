@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "======================================="
+echo "========================================"
 echo " VPS 全栈部署 (Web + SubConverter + VLESS + AdGuard + S-UI)"
-echo "======================================="
+echo "========================================"
 
-# —— 1. 输入域名和 Cloudflare API —— #
+# —— 输入域名和 Cloudflare API —— #
 read -rp "请输入主域名 (如 web.mycloudshare.org): " DOMAIN
 read -rp "请输入 Cloudflare 邮箱: " CF_EMAIL
 read -rp "请输入 Cloudflare API Token: " CF_TOKEN
@@ -13,13 +13,13 @@ read -rp "请输入 Cloudflare API Token: " CF_TOKEN
 export CF_Email="$CF_EMAIL"
 export CF_Token="$CF_TOKEN"
 
-# —— 2. 更新系统 & 安装依赖 —— #
-echo "[1/10] 安装依赖"
+# —— 1. 更新系统 & 安装依赖 —— #
+echo "[1/10] 更新系统并安装依赖"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx \
     build-essential python3 python-is-python3 nodejs npm
 
-# —— 3. 防火墙端口 —— #
+# —— 2. 防火墙端口 —— #
 echo "[2/10] 配置防火墙"
 ufw allow 22
 ufw allow 80
@@ -30,31 +30,37 @@ ufw allow 53
 ufw allow 25500
 ufw --force enable
 
-# —— 4. 安装 acme.sh DNS-01 —— #
+# —— 3. 检查并安装 acme.sh —— #
 echo "[3/10] 安装 acme.sh 用于 DNS-01 获取证书"
-curl https://get.acme.sh | sh
-source ~/.bashrc
+if [ ! -f "$HOME/.acme.sh/acme.sh" ]; then
+    curl https://get.acme.sh | sh
+    source ~/.bashrc
+fi
 
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
 mkdir -p /etc/nginx/ssl/"$DOMAIN"
 
 echo "[4/10] 使用 DNS-01 (Cloudflare) 申请证书..."
-~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
-~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-  --key-file       /etc/nginx/ssl/"$DOMAIN"/key.pem \
-  --fullchain-file /etc/nginx/ssl/"$DOMAIN"/fullchain.pem \
-  --reloadcmd     "systemctl reload nginx"
+if [ ! -f "/etc/nginx/ssl/$DOMAIN/fullchain.pem" ]; then
+    ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
+    ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+      --key-file       /etc/nginx/ssl/"$DOMAIN"/key.pem \
+      --fullchain-file /etc/nginx/ssl/"$DOMAIN"/fullchain.pem \
+      --reloadcmd     "systemctl reload nginx"
+fi
 
-# —— 5. 安装 SubConverter 二进制 —— #
+# —— 4.1 安装 SubConverter 二进制 —— #
 echo "[5/10] 安装 SubConverter 后端二进制"
-mkdir -p /opt/subconverter
-cd /opt/subconverter
+if [ ! -f /opt/subconverter/subconverter ]; then
+    mkdir -p /opt/subconverter
+    cd /opt/subconverter
 
-BIN_URL="https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter"
-echo "从 $BIN_URL 下载可执行文件..."
-wget -q -O subconverter "$BIN_URL"
-chmod +x subconverter
+    BIN_URL="https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter"
+    echo "从 $BIN_URL 下载可执行文件..."
+    wget -q -O subconverter "$BIN_URL"
+    chmod +x subconverter
+fi
 
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
@@ -74,10 +80,11 @@ EOF
 systemctl daemon-reload
 systemctl enable --now subconverter
 
-# —— 6. 构建 sub-web-modify 前端 —— #
+# —— 5. 构建 sub-web-modify 前端 —— #
 echo "[6/10] 构建 sub-web-modify 前端"
-rm -rf /opt/sub-web-modify
-cp -r ./sub-web-modify /opt/sub-web-modify
+if [ ! -d /opt/sub-web-modify ]; then
+    git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
+fi
 cd /opt/sub-web-modify
 
 # 修改 .env 让前端使用本地后端
@@ -99,21 +106,25 @@ EOF
 npm install --legacy-peer-deps
 npm run build
 
-# —— 7. 安装搜索主页 —— #
+# —— 6.2 准备搜索主页 —— #
 echo "[7/10] 准备搜索主页"
 rm -rf /opt/web-home
 mkdir -p /opt/web-home
 cp -r ./web/* /opt/web-home/
 
-# —— 8. 安装 S-UI 面板 —— #
+# —— 7. 安装 S-UI 面板 —— #
 echo "[8/10] 安装 S-UI 面板"
-bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+if [ ! -f /opt/s-ui ]; then
+    bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+fi
 
-# —— 9. 安装 AdGuard Home —— #
+# —— 8. 安装 AdGuard Home —— #
 echo "[9/10] 安装 AdGuard Home"
-curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+if ! command -v adguardhome &> /dev/null; then
+    curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+fi
 
-# —— 10. 写入 Nginx 配置 —— #
+# —— 9. 写入 Nginx 配置 —— #
 echo "[10/10] 写入 nginx 配置并生效"
 cat >/etc/nginx/sites-available/"$DOMAIN".conf <<EOF
 server {

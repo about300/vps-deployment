@@ -40,7 +40,12 @@ echo "[4/12] Issue SSL certificate via Cloudflare"
   --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
   --reloadcmd "systemctl reload nginx"
 
-echo "[5/12] Install SubConverter Backend"
+# Copy the certificates to /root and ensure they are updated
+echo "[5/12] Copy updated certificates to /root"
+cp -f /etc/nginx/ssl/$DOMAIN/fullchain.pem /root/
+cp -f /etc/nginx/ssl/$DOMAIN/key.pem /root/
+
+echo "[6/12] Install SubConverter Backend"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
 wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
@@ -60,11 +65,11 @@ systemctl daemon-reload
 systemctl enable subconverter
 systemctl restart subconverter
 
-echo "[6/12] Install Node.js (LTS)"
+echo "[7/12] Install Node.js (LTS)"
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs
 
-echo "[7/12] Build sub-web-modify (from about300 repo)"
+echo "[8/12] Build sub-web-modify (from about300 repo)"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
@@ -72,13 +77,13 @@ npm install
 npm run build
 
 # Add 'Enter Sub-Web' link to homepage
-echo "[8/12] Add 'Enter Sub-Web' link to homepage"
+echo "[9/12] Add 'Enter Sub-Web' link to homepage"
 echo '<a href="/subconvert/" style="position: absolute; top: 10px; right: 20px; padding: 10px; background-color: #008CBA; color: white; border-radius: 5px; text-decoration: none;">Enter Sub-Web</a>' >> /opt/web-home/current/index.html
 
-echo "[9/12] Install S-UI Panel (only local listening)"
+echo "[10/12] Install S-UI Panel (only local listening)"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-echo "[10/12] Configure Nginx for Web and API"
+echo "[11/12] Configure Nginx for Web and API"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
@@ -120,12 +125,33 @@ ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
 nginx -t
 systemctl reload nginx
 
-echo "[11/12] Install AdGuard Home (Port 3000)"
+echo "[12/12] Install AdGuard Home (Port 3000)"
 curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
 
-echo "[12/12] Finish 🎉"
+echo "[13/12] Finish 🎉"
 echo "====================================="
 echo "Web Home: https://$DOMAIN"
 echo "SubConverter API: https://$DOMAIN/sub/api/"
 echo "S-UI Panel: http://127.0.0.1:2095"
 echo "====================================="
+
+# Final reminder
+echo "===== Deployment Complete ====="
+echo "✅ Your VPS is now fully set up with the following services:"
+echo "- Web Home: https://$DOMAIN (Main Page)"
+echo "- Sub-Web: https://$DOMAIN/subconvert/ (Sub-Web Frontend)"
+echo "- SubConverter API: https://$DOMAIN/sub/api/ (Backend API)"
+echo "- S-UI Panel: http://127.0.0.1:2095 (Control Panel for VLESS)"
+echo "- AdGuard Home: http://127.0.0.1:3000 (DNS Blocking and Filtering)"
+
+echo ""
+echo "Next Steps:"
+echo "1. Ensure your Cloudflare DNS settings are correct for the domain $DOMAIN."
+echo "2. Verify that the VLESS service is configured correctly in the S-UI panel and is listening on 127.0.0.1:5000."
+echo "3. Test the Sub-Web by visiting https://$DOMAIN/subconvert/."
+echo "4. If using Cloudflare, ensure the proxy is enabled (orange cloud) for your domain."
+echo "5. To access the S-UI panel, open http://127.0.0.1:2095 in your browser."
+
+echo ""
+echo "If you encounter any issues, check the logs for Nginx, SubConverter, and S-UI for further troubleshooting."
+echo "Good luck, and enjoy your setup!"

@@ -85,31 +85,34 @@ bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.s
 echo "[9/12] Configure Nginx for Web and API"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
-    listen 80;
-    server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
-}
-
-server {
     listen 443 ssl http2;
-    server_name $DOMAIN;
+    server_name new.mycloudshare.org;
 
-    ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
+    ssl_certificate     /etc/nginx/ssl/new.mycloudshare.org/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/new.mycloudshare.org/key.pem;
 
-    root /opt/sub-web-modify/dist;
+    # ① 搜索主页（真正的首页）
+    root /opt/web-home;
     index index.html;
 
     location / {
-        try_files \$uri \$uri/ /index.html;
+        try_files $uri $uri/ /index.html;
     }
 
+    # ② 订阅转换前端
+    location /subconvert/ {
+        alias /opt/sub-web/dist/;
+        try_files $uri $uri/ /subconvert/index.html;
+    }
+
+    # ③ 订阅转换后端（本地 subconverter）
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
     }
 }
+
 EOF
 
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/

@@ -71,7 +71,7 @@ cd /opt/sub-web-modify
 npm install
 npm run build
 
-# Add 'Enter Sub-Web' link to the homepage
+# Add 'Enter Sub-Web' link to homepage
 echo "[8/12] Add 'Enter Sub-Web' link to homepage"
 echo '<a href="/subconvert/" style="position: absolute; top: 10px; right: 20px; padding: 10px; background-color: #008CBA; color: white; border-radius: 5px; text-decoration: none;">Enter Sub-Web</a>' >> /opt/web-home/current/index.html
 
@@ -83,6 +83,7 @@ cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
     server_name $DOMAIN;
+
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
@@ -106,9 +107,9 @@ server {
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
 
-    # VLESS Subscription: Proxy to S-UI VLESS service
+    # VLESS 订阅：通过反向代理将流量转发到 S-UI 中设置的 VLESS 服务
     location /vless/ {
-        proxy_pass http://127.0.0.1:5000;  # VLESS default port
+        proxy_pass http://127.0.0.1:5000;  # 反向代理到本地 VLESS 服务
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
     }

@@ -1,135 +1,144 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -e
 
-# 安装基本依赖
-echo "Installing required packages..."
-sudo apt-get update
-sudo apt-get install -y wget curl build-essential libssl-dev libpcre3 libpcre3-dev zlib1g-dev
+echo "======================================"
+echo " 一键部署 全栈服务"
+echo " - VLESS + Reality 共用 443 端口"
+echo " - SubConverter 后端 + sub-web-modify"
+echo " - S-UI 面板"
+echo " - AdGuard Home"
+echo " - Let's Encrypt DNS-01"
+echo "======================================"
 
-# 下载并解压 Nginx 源码
-NGINX_VERSION="1.24.0"
-echo "Downloading Nginx version $NGINX_VERSION..."
-cd /opt
-wget https://nginx.org/download/nginx-$NGINX_VERSION.tar.gz
-tar -zxvf nginx-$NGINX_VERSION.tar.gz
-cd nginx-$NGINX_VERSION
+# 输入域名与 Cloudflare 配置信息
+read -rp "请输入主域名（如 mycloudshare.org）: " DOMAIN
+read -rp "请输入 Cloudflare 邮箱: " CF_EMAIL
+read -rp "请输入 Cloudflare API Token: " CF_TOKEN
 
-# 下载并解压 OpenSSL
-OPENSSL_VERSION="1.1.1k"
-echo "Downloading OpenSSL version $OPENSSL_VERSION..."
-cd /opt
-wget https://www.openssl.org/source/openssl-$OPENSSL_VERSION.tar.gz
-tar -zxvf openssl-$OPENSSL_VERSION.tar.gz
-cd openssl-$OPENSSL_VERSION
+# 设置 Cloudflare API Token
+export CF_Email="$CF_EMAIL"
+export CF_Token="$CF_TOKEN"
 
-# 配置 Nginx 并启用必要的模块
-echo "Configuring Nginx with necessary modules..."
-cd /opt/nginx-$NGINX_VERSION
-./configure --with-stream --with-stream_ssl_module --with-stream_realip_module --with-openssl=/opt/openssl-$OPENSSL_VERSION
+# 更新系统
+echo "[1/9] 更新系统 & 安装基础组件"
+apt update -y
+apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
 
-# 编译和安装 Nginx
-echo "Compiling Nginx..."
-make -j$(nproc)
-sudo make install
+# 防火墙设置
+echo "[2/9] 防火墙放行必要端口"
+ufw allow 22
+ufw allow 80
+ufw allow 443
+ufw allow 3000
+ufw allow 8445
+ufw --force enable
 
-# 创建日志目录
-sudo mkdir -p /usr/local/nginx/logs
-sudo mkdir -p /usr/local/nginx/html
+# 安装 acme.sh
+echo "[3/9] 安装 acme.sh"
+curl https://get.acme.sh | sh
+source ~/.bashrc
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
-# 配置 Nginx
-echo "Configuring Nginx..."
-sudo cp /opt/nginx-$NGINX_VERSION/conf/nginx.conf /usr/local/nginx/conf/
-sudo cp /opt/nginx-$NGINX_VERSION/conf/mime.types /usr/local/nginx/conf/
-sudo cp -r /opt/nginx-$NGINX_VERSION/html/* /usr/local/nginx/html/
+# 使用 DNS-01 进行 Let's Encrypt 证书申请
+echo "[4/9] 使用 DNS-01 申请证书"
+mkdir -p /etc/nginx/ssl/$DOMAIN
+~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
+~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+  --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
+  --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
+  --reloadcmd "systemctl reload nginx"
 
-# 配置 Nginx 服务
-echo "Setting up Nginx service..."
-cat > /etc/systemd/system/nginx.service <<EOL
+# 安装 SubConverter 后端
+echo "[5/9] 安装 SubConverter 后端"
+mkdir -p /opt/subconverter
+cd /opt/subconverter
+wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+chmod +x subconverter
+
+# 创建 SubConverter 服务
+cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
-Description=The NGINX HTTP and reverse proxy server
+Description=SubConverter
 After=network.target
 
 [Service]
-ExecStart=/usr/local/nginx/sbin/nginx
-ExecReload=/usr/local/nginx/sbin/nginx -s reload
-ExecStop=/usr/local/nginx/sbin/nginx -s stop
+ExecStart=/opt/subconverter/subconverter
+WorkingDirectory=/opt/subconverter
 Restart=always
-PIDFile=/run/nginx.pid
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
-EOL
+EOF
 
-# 重新加载系统服务
-sudo systemctl daemon-reload
-sudo systemctl enable nginx
-sudo systemctl start nginx
+systemctl daemon-reload
+systemctl enable subconverter
+systemctl restart subconverter
 
-# 测试 Nginx 配置是否成功
-echo "Testing Nginx configuration..."
-sudo /usr/local/nginx/sbin/nginx -t
+# 安装 Node.js (LTS)
+echo "[6/9] 安装 Node.js (LTS)"
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 
+apt install -y nodejs
 
-# 安装 S-UI
-echo "Installing S-UI..."
-cd /opt
-wget https://github.com/alireza0/s-ui/releases/download/v1.3.7/s-ui-linux-amd64.tar.gz
-tar -zxvf s-ui-linux-amd64.tar.gz
-cd s-ui
+# 构建 sub-web-modify 前端
+echo "[7/9] 构建 sub-web-modify"
+rm -rf /opt/sub-web-modify
+git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
+cd /opt/sub-web-modify
+npm install
+npm run build
 
-# 安装 S-UI 服务
-echo "Setting up S-UI service..."
-cat > /etc/systemd/system/s-ui.service <<EOL
-[Unit]
-Description=S-UI Panel
-After=network.target
+# 安装 S-UI 面板（仅安装，不暴露）
+echo "[8/9] 安装 S-UI 面板"
+bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-[Service]
-ExecStart=/opt/s-ui/s-ui.sh
-ExecReload=/opt/s-ui/s-ui.sh reload
-ExecStop=/opt/s-ui/s-ui.sh stop
-Restart=always
-User=root
+# nginx 配置（共用 443 端口，nginx 反向代理）
+echo "[9/9] 配置 nginx"
+cat >/etc/nginx/sites-available/$DOMAIN <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
 
-[Install]
-WantedBy=multi-user.target
-EOL
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
 
-# 重新加载服务
-sudo systemctl daemon-reload
-sudo systemctl enable s-ui
-sudo systemctl start s-ui
+    ssl_certificate /etc/nginx/ssl/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-# 安装 AdGuard Home
-echo "Installing AdGuard Home..."
-cd /opt
-wget https://github.com/AdguardTeam/AdGuardHome/releases/download/v0.107.0/AdGuardHome_linux_amd64.tar.gz
-tar -zxvf AdGuardHome_linux_amd64.tar.gz
-cd AdGuardHome
+    root /opt/sub-web-modify/dist;
+    index index.html;
 
-# 设置 AdGuard Home 服务
-echo "Setting up AdGuard Home service..."
-cat > /etc/systemd/system/adguardhome.service <<EOL
-[Unit]
-Description=AdGuard Home
-After=network.target
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
 
-[Service]
-ExecStart=/opt/AdGuardHome/AdGuardHome
-ExecReload=/opt/AdGuardHome/AdGuardHome reload
-ExecStop=/opt/AdGuardHome/AdGuardHome stop
-Restart=always
-User=root
+    location /sub/api/ {
+        proxy_pass http://127.0.0.1:25500/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+    }
 
-[Install]
-WantedBy=multi-user.target
-EOL
+    # S-UI 面板反向代理
+    location /ui/ {
+        proxy_pass http://127.0.0.1:2095/app/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
 
-# 重新加载服务
-sudo systemctl daemon-reload
-sudo systemctl enable adguardhome
-sudo systemctl start adguardhome
+ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
 
-echo "Installation completed successfully!"
-
-# 提示用户访问地址
-echo "Access your S-UI panel at: http://<your_server_ip>:2095/app/"
-echo "Access your AdGuard Home panel at: http://<your_server_ip>:3000/"
+echo "======================================"
+echo "🎉 部署完成！"
+echo "Web 页面： https://$DOMAIN"
+echo "SubConverter API： https://$DOMAIN/sub/api/"
+echo "S-UI 面板： https://$DOMAIN/ui/"
+echo "======================================"

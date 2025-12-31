@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -e
-
 echo "===== VPS Full Stack Deployment ====="
 
 # Step 1: Input your domain and Cloudflare credentials
 read -rp "Please enter your domain (e.g., web.mycloudshare.org): " DOMAIN
 read -rp "Please enter your Cloudflare email: " CF_Email
 read -rp "Please enter your Cloudflare API Token: " CF_Token
+export CF_Email
+export CF_Token
 
-# 导出变量供 acme.sh 使用
-export CF_Key="$CF_Token"
-export CF_Email="$CF_Email"
+# Pre-define the VLESS port (change this as needed)
+VLESS_PORT=5000  # You can change this to any port you prefer for VLESS
 
 echo "[1/12] Update system and install dependencies"
 apt update -y
@@ -30,9 +30,7 @@ ufw --force enable
 echo "[3/12] Install acme.sh for DNS-01 verification"
 curl https://get.acme.sh | sh
 source ~/.bashrc
-
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-
 mkdir -p /etc/nginx/ssl/$DOMAIN
 
 # Use DNS-01 verification via Cloudflare
@@ -46,93 +44,116 @@ echo "[4/12] Issue SSL certificate via Cloudflare"
   --reloadcmd "systemctl reload nginx"
 
 echo "[5/12] Install SubConverter Backend"
-mkdir -p /opt/subconverter
-cd /opt/subconverter
-# 建议检查此链接是否有效，或使用官方 binary
-wget -O subconverter.tar.gz github.com
-tar -zxvf subconverter.tar.gz -C /opt/subconverter --strip-components=1
-chmod +x subconverter
-
-cat >/etc/systemd/system/subconverter.service <<EOF
+# Check if SubConverter exists, if not, clone and compile it
+if [ ! -f "/opt/subconverter/subconverter" ]; then
+    echo "[INFO] SubConverter not found, cloning and building..."
+    mkdir -p /opt/subconverter
+    cd /opt/subconverter
+    git clone https://github.com/about300/vps-deployment.git
+    cd vps-deployment/bin
+    wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+    chmod +x subconverter
+    cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
 Description=SubConverter Service
 After=network.target
 
 [Service]
-ExecStart=/opt/subconverter/subconverter
+ExecStart=/opt/subconverter/vps-deployment/bin/subconverter
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
-
-systemctl daemon-reload
-systemctl enable subconverter
-systemctl restart subconverter
+    systemctl daemon-reload
+    systemctl enable subconverter
+    systemctl restart subconverter
+else
+    echo "[INFO] SubConverter found, skipping clone."
+fi
 
 echo "[6/12] Install Node.js (LTS)"
-curl -fsSL deb.nodesource.com | bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs
 
-echo "[7/12] Build sub-web-modify"
-rm -rf /opt/sub-web-modify
-git clone github.com /opt/sub-web-modify
-cd /opt/sub-web-modify
-npm install
-npm run build
+echo "[7/12] Build sub-web-modify (from about300 repo)"
+# Check if sub-web-modify exists, if not, clone and build it
+if [ ! -d "/opt/sub-web-modify" ]; then
+    echo "[INFO] sub-web-modify not found, cloning and building..."
+    rm -rf /opt/sub-web-modify
+    git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
+    cd /opt/sub-web-modify
+    npm install
+    npm run build
+else
+    echo "[INFO] sub-web-modify found, skipping clone."
+fi
 
-echo "[8/12] Install S-UI Panel"
-bash <(curl -Ls raw.githubusercontent.com)
+echo "[8/12] Install S-UI Panel (only local listening)"
+bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
-echo "[9/12] Configure Nginx for Web and API"
-# 使用 '${DOMAIN}' 传递变量，同时用 'EOF' 包裹防止内部 $ 变量被 Shell 解析
+echo "[9/12] Clone Web Files from GitHub"
+# Check if web-home folder exists, if not, clone it
+if [ ! -d "/opt/web-home" ]; then
+    echo "[INFO] web-home not found, cloning..."
+    rm -rf /opt/web-home
+    git clone https://github.com/about300/vps-deployment.git /opt/web-home
+    mv /opt/web-home/web /opt/web-home/current
+else
+    echo "[INFO] web-home found, skipping clone."
+fi
+
+echo "[10/12] Configure Nginx for Web and API"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
     server_name $DOMAIN;
-
+    
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    # 首页
-    root /opt/web-home;
+    # 主页：指向 Web 内容并支持搜索功能
+    root /opt/web-home/current;
     index index.html;
-
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # 订阅转换前端
+    # 订阅转换前端：指向 Sub-Web-Modify 构建的静态文件
     location /subconvert/ {
         alias /opt/sub-web-modify/dist/;
         try_files \$uri \$uri/ /subconvert/index.html;
     }
 
-    # 订阅转换后端
+    # 订阅转换后端：代理到本地 SubConverter 服务
     location /sub/api/ {
-        proxy_pass 127.0.0.1;
+        proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+    }
+
+    # VLESS 订阅：通过反向代理将流量转发到 S-UI 中设置的 VLESS 服务
+    location /vless/ {
+        proxy_pass http://127.0.0.1:$VLESS_PORT;  # 使用预设的端口
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$remote_addr;
     }
 }
 EOF
-
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
-# 删除默认配置防止冲突
-rm -f /etc/nginx/sites-enabled/default
-
 nginx -t
-systemctl restart nginx
+systemctl reload nginx
 
-echo "[11/12] Install AdGuard Home"
-curl -sSL raw.githubusercontent.com | sh
+echo "[11/12] Configure DNS-01 for Let's Encrypt"
+echo "[INFO] Using Cloudflare API for DNS-01"
 
-echo "[12/12] Finish 🎉"
+echo "[12/12] Install AdGuard Home (Port 3000)"
+curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+
+echo "[13/12] Finish 🎉"
 echo "====================================="
 echo "Web Home: https://$DOMAIN"
-echo "Sub-Web: https://$DOMAIN/subconvert/"
 echo "SubConverter API: https://$DOMAIN/sub/api/"
+echo "S-UI Panel: http://127.0.0.1:2095"
 echo "====================================="

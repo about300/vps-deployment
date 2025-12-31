@@ -9,6 +9,9 @@ read -rp "Please enter your Cloudflare API Token: " CF_Token
 export CF_Email
 export CF_Token
 
+# Pre-define the VLESS port (change this as needed)
+VLESS_PORT=5000  # You can change this to any port you prefer for VLESS
+
 echo "[1/12] Update system and install dependencies"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
@@ -40,55 +43,82 @@ echo "[4/12] Issue SSL certificate via Cloudflare"
   --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
   --reloadcmd "systemctl reload nginx"
 
-# Copy the certificates to /root and ensure they are updated
-echo "[5/12] Copy updated certificates to /root"
-cp -f /etc/nginx/ssl/$DOMAIN/fullchain.pem /root/
-cp -f /etc/nginx/ssl/$DOMAIN/key.pem /root/
-
-echo "[6/12] Install SubConverter Backend"
-mkdir -p /opt/subconverter
-cd /opt/subconverter
-wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
-chmod +x subconverter
-cat >/etc/systemd/system/subconverter.service <<EOF
+echo "[5/12] Install SubConverter Backend"
+# Check if SubConverter exists, if not, clone and compile it
+if [ ! -f "/opt/subconverter/subconverter" ]; then
+    echo "[INFO] SubConverter not found, cloning and building..."
+    mkdir -p /opt/subconverter
+    cd /opt/subconverter
+    git clone https://github.com/about300/vps-deployment.git
+    cd vps-deployment/bin
+    wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+    chmod +x subconverter
+    cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
 Description=SubConverter Service
 After=network.target
+
 [Service]
-ExecStart=/opt/subconverter/subconverter
+ExecStart=/opt/subconverter/vps-deployment/bin/subconverter
 Restart=always
 RestartSec=3
+
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reload
-systemctl enable subconverter
-systemctl restart subconverter
+    systemctl daemon-reload
+    systemctl enable subconverter
+    systemctl restart subconverter
+else
+    echo "[INFO] SubConverter found, skipping clone."
+fi
 
-echo "[7/12] Install Node.js (LTS)"
+echo "[6/12] Install Node.js (LTS)"
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs
 
-echo "[8/12] Build sub-web-modify (from about300 repo)"
-rm -rf /opt/sub-web-modify
-git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
-cd /opt/sub-web-modify
-npm install
-npm run build
+echo "[7/12] Build sub-web-modify (from about300 repo)"
+# Check if sub-web-modify exists, if not, clone and build it
+if [ ! -d "/opt/sub-web-modify" ]; then
+    echo "[INFO] sub-web-modify not found, cloning and building..."
+    rm -rf /opt/sub-web-modify
+    git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
+    cd /opt/sub-web-modify
+    npm install
+    npm run build
+else
+    echo "[INFO] sub-web-modify found, skipping clone."
+fi
 
-# Add 'Enter Sub-Web' link to homepage
-echo "[9/12] Add 'Enter Sub-Web' link to homepage"
-echo '<a href="/subconvert/" style="position: absolute; top: 10px; right: 20px; padding: 10px; background-color: #008CBA; color: white; border-radius: 5px; text-decoration: none;">Enter Sub-Web</a>' >> /opt/web-home/current/index.html
-
-echo "[10/12] Install S-UI Panel (only local listening)"
+echo "[8/12] Install S-UI Panel (only local listening)"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+
+echo "[9/12] Clone Web Files from GitHub"
+# Check if web-home folder exists, if not, clone it
+if [ ! -d "/opt/web-home" ]; then
+    echo "[INFO] web-home not found, cloning..."
+    rm -rf /opt/web-home
+    git clone https://github.com/about300/vps-deployment.git /opt/web-home
+    mv /opt/web-home/web /opt/web-home/current
+else
+    echo "[INFO] web-home found, skipping clone."
+fi
+
+echo "[10/12] Ensure Web Files Are Correct"
+# Download the latest index.html file directly from GitHub repository
+echo "[INFO] Downloading index.html from GitHub repository"
+curl -L -o /opt/web-home/current/index.html https://raw.githubusercontent.com/about300/vps-deployment/main/web/index.html
+
+# Add 'Enter Sub-Web' link to the downloaded index.html
+echo "[INFO] Adding 'Enter Sub-Web' link to index.html"
+echo '<a href="/subconvert/" style="position: absolute; top: 10px; right: 20px; padding: 10px; background-color: #008CBA; color: white; border-radius: 5px; text-decoration: none;">Enter Sub-Web</a>' >> /opt/web-home/current/index.html
 
 echo "[11/12] Configure Nginx for Web and API"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
     server_name $DOMAIN;
-
+    
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
@@ -114,13 +144,12 @@ server {
 
     # VLESS 订阅：通过反向代理将流量转发到 S-UI 中设置的 VLESS 服务
     location /vless/ {
-        proxy_pass http://127.0.0.1:5000;  # 反向代理到本地 VLESS 服务
+        proxy_pass http://127.0.0.1:$VLESS_PORT;  # 使用预设的端口
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
 }
 EOF
-
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
 nginx -t
 systemctl reload nginx
@@ -134,24 +163,3 @@ echo "Web Home: https://$DOMAIN"
 echo "SubConverter API: https://$DOMAIN/sub/api/"
 echo "S-UI Panel: http://127.0.0.1:2095"
 echo "====================================="
-
-# Final reminder
-echo "===== Deployment Complete ====="
-echo "✅ Your VPS is now fully set up with the following services:"
-echo "- Web Home: https://$DOMAIN (Main Page)"
-echo "- Sub-Web: https://$DOMAIN/subconvert/ (Sub-Web Frontend)"
-echo "- SubConverter API: https://$DOMAIN/sub/api/ (Backend API)"
-echo "- S-UI Panel: http://127.0.0.1:2095 (Control Panel for VLESS)"
-echo "- AdGuard Home: http://127.0.0.1:3000 (DNS Blocking and Filtering)"
-
-echo ""
-echo "Next Steps:"
-echo "1. Ensure your Cloudflare DNS settings are correct for the domain $DOMAIN."
-echo "2. Verify that the VLESS service is configured correctly in the S-UI panel and is listening on 127.0.0.1:5000."
-echo "3. Test the Sub-Web by visiting https://$DOMAIN/subconvert/."
-echo "4. If using Cloudflare, ensure the proxy is enabled (orange cloud) for your domain."
-echo "5. To access the S-UI panel, open http://127.0.0.1:2095 in your browser."
-
-echo ""
-echo "If you encounter any issues, check the logs for Nginx, SubConverter, and S-UI for further troubleshooting."
-echo "Good luck, and enjoy your setup!"

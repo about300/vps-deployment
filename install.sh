@@ -44,48 +44,65 @@ echo "[4/12] Issue SSL certificate via Cloudflare"
   --reloadcmd "systemctl reload nginx"
 
 echo "[5/12] Install SubConverter Backend"
-mkdir -p /opt/subconverter
-cd /opt/subconverter
-wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
-chmod +x subconverter
-cat >/etc/systemd/system/subconverter.service <<EOF
+# Check if SubConverter exists, if not, clone and compile it
+if [ ! -f "/opt/subconverter/subconverter" ]; then
+    echo "[INFO] SubConverter not found, cloning and building..."
+    mkdir -p /opt/subconverter
+    cd /opt/subconverter
+    git clone https://github.com/about300/vps-deployment.git
+    cd vps-deployment/bin
+    wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+    chmod +x subconverter
+    cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
 Description=SubConverter Service
 After=network.target
 
 [Service]
-ExecStart=/opt/subconverter/subconverter
+ExecStart=/opt/subconverter/vps-deployment/bin/subconverter
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reload
-systemctl enable subconverter
-systemctl restart subconverter
+    systemctl daemon-reload
+    systemctl enable subconverter
+    systemctl restart subconverter
+else
+    echo "[INFO] SubConverter found, skipping clone."
+fi
 
 echo "[6/12] Install Node.js (LTS)"
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs
 
 echo "[7/12] Build sub-web-modify (from about300 repo)"
-rm -rf /opt/sub-web-modify
-git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
-cd /opt/sub-web-modify
-npm install
-npm run build
+# Check if sub-web-modify exists, if not, clone and build it
+if [ ! -d "/opt/sub-web-modify" ]; then
+    echo "[INFO] sub-web-modify not found, cloning and building..."
+    rm -rf /opt/sub-web-modify
+    git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
+    cd /opt/sub-web-modify
+    npm install
+    npm run build
+else
+    echo "[INFO] sub-web-modify found, skipping clone."
+fi
 
 echo "[8/12] Install S-UI Panel (only local listening)"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 
 echo "[9/12] Clone Web Files from GitHub"
-# Clone the 'web' folder from the about300 vps-deployment repo
-rm -rf /opt/web-home
-git clone https://github.com/about300/vps-deployment.git /opt/web-home
-
-# Move the web folder to its proper location
-mv /opt/web-home/web /opt/web-home/current
+# Check if web-home folder exists, if not, clone it
+if [ ! -d "/opt/web-home" ]; then
+    echo "[INFO] web-home not found, cloning..."
+    rm -rf /opt/web-home
+    git clone https://github.com/about300/vps-deployment.git /opt/web-home
+    mv /opt/web-home/web /opt/web-home/current
+else
+    echo "[INFO] web-home found, skipping clone."
+fi
 
 echo "[10/12] Configure Nginx for Web and API"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF

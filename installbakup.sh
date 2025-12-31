@@ -8,8 +8,9 @@ read -rp "Please enter your domain (e.g., web.mycloudshare.org): " DOMAIN
 read -rp "Please enter your Cloudflare email: " CF_Email
 read -rp "Please enter your Cloudflare API Token: " CF_Token
 
-export CF_Email
-export CF_Token
+# 导出变量供 acme.sh 使用
+export CF_Key="$CF_Token"
+export CF_Email="$CF_Email"
 
 echo "[1/12] Update system and install dependencies"
 apt update -y
@@ -47,7 +48,9 @@ echo "[4/12] Issue SSL certificate via Cloudflare"
 echo "[5/12] Install SubConverter Backend"
 mkdir -p /opt/subconverter
 cd /opt/subconverter
-wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
+# 建议检查此链接是否有效，或使用官方 binary
+wget -O subconverter.tar.gz github.com
+tar -zxvf subconverter.tar.gz -C /opt/subconverter --strip-components=1
 chmod +x subconverter
 
 cat >/etc/systemd/system/subconverter.service <<EOF
@@ -69,65 +72,67 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 echo "[6/12] Install Node.js (LTS)"
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+curl -fsSL deb.nodesource.com | bash -
 apt install -y nodejs
 
-echo "[7/12] Build sub-web-modify (from about300 repo)"
+echo "[7/12] Build sub-web-modify"
 rm -rf /opt/sub-web-modify
-git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
+git clone github.com /opt/sub-web-modify
 cd /opt/sub-web-modify
 npm install
 npm run build
 
-echo "[8/12] Install S-UI Panel (only local listening)"
-bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+echo "[8/12] Install S-UI Panel"
+bash <(curl -Ls raw.githubusercontent.com)
 
 echo "[9/12] Configure Nginx for Web and API"
+# 使用 '${DOMAIN}' 传递变量，同时用 'EOF' 包裹防止内部 $ 变量被 Shell 解析
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
-    server_name new.mycloudshare.org;
+    server_name $DOMAIN;
 
-    ssl_certificate     /etc/nginx/ssl/new.mycloudshare.org/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/new.mycloudshare.org/key.pem;
+    ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    # ① 搜索主页（真正的首页）
+    # 首页
     root /opt/web-home;
     index index.html;
 
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 
-    # ② 订阅转换前端
+    # 订阅转换前端
     location /subconvert/ {
-        alias /opt/sub-web/dist/;
-        try_files $uri $uri/ /subconvert/index.html;
+        alias /opt/sub-web-modify/dist/;
+        try_files \$uri \$uri/ /subconvert/index.html;
     }
 
-    # ③ 订阅转换后端（本地 subconverter）
+    # 订阅转换后端
     location /sub/api/ {
-        proxy_pass http://127.0.0.1:25500/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_pass 127.0.0.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
-
 EOF
 
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+# 删除默认配置防止冲突
+rm -f /etc/nginx/sites-enabled/default
+
 nginx -t
-systemctl reload nginx
+systemctl restart nginx
 
-echo "[10/12] Configure DNS-01 for Let's Encrypt"
-echo "[INFO] Using Cloudflare API for DNS-01"
-
-echo "[11/12] Install AdGuard Home (Port 3000)"
-curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+echo "[11/12] Install AdGuard Home"
+curl -sSL raw.githubusercontent.com | sh
 
 echo "[12/12] Finish 🎉"
 echo "====================================="
 echo "Web Home: https://$DOMAIN"
+echo "Sub-Web: https://$DOMAIN/subconvert/"
 echo "SubConverter API: https://$DOMAIN/sub/api/"
-echo "S-UI Panel: http://127.0.0.1:2095"
 echo "====================================="

@@ -17,6 +17,9 @@ VLESS_PORT=5000
 # SubConverter 二进制下载链接
 SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
 
+# Web主页GitHub仓库
+WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
+
 # -----------------------------
 # 步骤 1：更新系统与依赖
 # -----------------------------
@@ -31,10 +34,12 @@ echo "[2/12] 配置防火墙"
 ufw allow 22
 ufw allow 80
 ufw allow 443
-ufw allow 3000      # AdGuard 反代
-ufw allow 8445      # AdGuard 本地 DoH
-ufw allow 8446      # AdGuard 本地 DoT
-ufw allow 2550
+ufw allow 3000   # AdGuard Home 反代端口
+ufw allow 8445   # 本地 DoH 备用
+ufw allow 8446   # 本地 DoH 备用
+ufw allow 5000   # VLESS
+ufw allow 25500  # SubConverter API
+ufw allow 2095   # S-UI 面板
 ufw --force enable
 
 # -----------------------------
@@ -99,6 +104,17 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 # -----------------------------
+# 步骤 6.1：配置 pref.toml 启用 filter/sort
+# -----------------------------
+mkdir -p /opt/subconverter/profiles/filter /opt/subconverter/profiles/script
+cat >/opt/subconverter/pref.toml <<EOF
+enable_filter = true
+filter_script = "profiles/filter/filter.js"
+sort_flag = true
+sort_script = "profiles/script/sort.js"
+EOF
+
+# -----------------------------
 # 步骤 7：安装 Node.js（已安装 npm 可跳过）
 # -----------------------------
 echo "[7/12] 确保 Node.js 可用"
@@ -108,15 +124,15 @@ if ! command -v node &> /dev/null; then
 fi
 
 # -----------------------------
-# 步骤 8：构建 sub-web-modify 前端
+# 步骤 8：构建 sub-web-modify 前端（含自定义 .env）
 # -----------------------------
 echo "[8/12] 构建 sub-web-modify 前端"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
 
-# 修改 .env
-cat >/opt/sub-web-modify/.env <<EOF
+# 写入自定义 .env
+cat > .env <<'EOF'
 VUE_APP_PROJECT="https://github.com/youshandefeiyang/sub-web-modify"
 VUE_APP_BOT_LINK="https://t.me/feiyangdigital"
 VUE_APP_BILIBILI_LINK="https://space.bilibili.com/138129883"
@@ -131,7 +147,7 @@ VUE_APP_MYURLS_DEFAULT_BACKEND="/sub/api/short"
 VUE_APP_CONFIG_UPLOAD_BACKEND="/sub/api/upload"
 EOF
 
-# publicPath
+# 设置 publicPath 为 /subconvert/
 cat > vue.config.js <<'EOF'
 module.exports = { publicPath: '/subconvert/' }
 EOF
@@ -148,18 +164,27 @@ if [ ! -d "/opt/s-ui" ]; then
 fi
 
 # -----------------------------
-# 步骤 10：Web 主页
+# 步骤 10：Web 主页（自动更新机制）
 # -----------------------------
 echo "[10/12] 配置 Web 主页"
-mkdir -p /opt/web-home/current
-if [ ! -d "/opt/web-home/current" ]; then
-    git clone https://github.com/about300/vps-deployment.git /opt/web-home/current
+rm -rf /opt/web-home
+mkdir -p /opt/web-home
+git clone $WEB_HOME_REPO /opt/web-home/tmp
+mv /opt/web-home/tmp/web /opt/web-home/current
+rm -rf /opt/web-home/tmp
+
+# -----------------------------
+# 步骤 11：安装 AdGuard Home
+# -----------------------------
+echo "[11/12] 安装 AdGuard Home"
+if [ ! -d "/opt/AdGuardHome" ]; then
+    curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
 fi
 
 # -----------------------------
-# 步骤 11：Nginx 配置
+# 步骤 12：配置 Nginx
 # -----------------------------
-echo "[11/12] 配置 Nginx"
+echo "[12/12] 配置 Nginx"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
@@ -168,7 +193,7 @@ server {
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    # Web 主页
+    # Web主页
     root /opt/web-home/current;
     index index.html;
     location / {
@@ -187,7 +212,6 @@ server {
         proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
-        proxy_set_header X-Real-IP \$remote_addr;
     }
 
     # VLESS 订阅
@@ -197,12 +221,12 @@ server {
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
 
-    # AdGuard Home 反代 (管理端口 3000)
+    # AdGuard Home 反代
     location /adguard/ {
         proxy_pass http://127.0.0.1:3000/;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
-        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
     }
 }
 EOF
@@ -212,19 +236,13 @@ nginx -t
 systemctl reload nginx
 
 # -----------------------------
-# 步骤 12：安装 AdGuard Home
-# -----------------------------
-echo "[12/12] 安装 AdGuard Home"
-curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
-
-# -----------------------------
 # 完成
 # -----------------------------
 echo "====================================="
 echo "部署完成 🎉"
-echo "Web 主页: https://$DOMAIN"
-echo "SubConverter API: https://$DOMAIN/sub/api/"
+echo "Web主页: https://$DOMAIN"
 echo "SubConverter 前端: https://$DOMAIN/subconvert/"
-echo "AdGuard Home 管理: https://$DOMAIN/adguard/"
+echo "SubConverter API: https://$DOMAIN/sub/api/"
 echo "S-UI 面板: http://127.0.0.1:2095"
+echo "AdGuard Home: https://$DOMAIN/adguard/  (本地端口 3000/8445/8446 可用)"
 echo "====================================="

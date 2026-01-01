@@ -1,95 +1,77 @@
 #!/usr/bin/env bash
 set -e
-echo "===== VPS 全栈部署（最终版） ====="
 
-# -----------------------------
-# 步骤 0：预定义变量
-# -----------------------------
-read -rp "请输入您的域名 (例如：web.mycloudshare.org): " DOMAIN
-read -rp "请输入 Cloudflare 邮箱: " CF_Email
+echo "=============================="
+echo " VPS 一键部署（最终稳定版）"
+echo "=============================="
+
+# ===== 基本输入 =====
+read -rp "请输入域名（例如：girl.mycloudshare.org）: " DOMAIN
 read -rp "请输入 Cloudflare API Token: " CF_Token
-export CF_Email
 export CF_Token
 
-# VLESS 默认端口
-VLESS_PORT=5000
+# ===== 端口预设 =====
+SUBCONVERTER_PORT=25500
+VLESS_PORT=5000   # 仅预留，不创建节点
 
-# SubConverter 二进制下载链接
-SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
+# ===== 路径预设 =====
+SUBCONVERTER_DIR=/opt/subconverter
+SUBWEB_DIR=/opt/sub-web-modify
+WEBROOT=/opt/web-home/current
+SSL_DIR=/etc/nginx/ssl/${DOMAIN}
 
-# -----------------------------
-# 步骤 1：更新系统与依赖
-# -----------------------------
-echo "[1/12] 更新系统与安装依赖"
+# ===== Step 1：系统依赖 =====
+echo "[1/12] 安装系统依赖"
 apt update -y
-apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 npm
+apt install -y curl wget git nginx ufw socat cron unzip nodejs npm
 
-# -----------------------------
-# 步骤 2：防火墙配置
-# -----------------------------
+# ===== Step 2：防火墙 =====
 echo "[2/12] 配置防火墙"
 ufw allow 22
 ufw allow 80
 ufw allow 443
-ufw allow 8443
-ufw allow 3000
-ufw allow 8445
-ufw allow 53
-ufw allow 2550
 ufw --force enable
 
-# -----------------------------
-# 步骤 3：安装 acme.sh
-# -----------------------------
-echo "[3/12] 安装 acme.sh（DNS-01）"
-if [ ! -d "$HOME/.acme.sh" ]; then
-    curl https://get.acme.sh | sh
-    source ~/.bashrc
-else
-    echo "[INFO] acme.sh 已安装，跳过"
+# ===== Step 3：acme.sh =====
+echo "[3/12] 安装 acme.sh"
+if [ ! -d ~/.acme.sh ]; then
+  curl https://get.acme.sh | sh
 fi
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-mkdir -p /etc/nginx/ssl/$DOMAIN
 
-# -----------------------------
-# 步骤 4：申请 SSL 证书
-# -----------------------------
-echo "[4/12] 申请或检查 SSL 证书"
-if [ ! -f "/etc/nginx/ssl/$DOMAIN/fullchain.pem" ]; then
-    ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
-else
-    echo "[INFO] SSL 证书已存在，跳过申请"
+# ===== Step 4：申请证书 =====
+echo "[4/12] 申请 SSL 证书"
+mkdir -p "${SSL_DIR}"
+if [ ! -f "${SSL_DIR}/fullchain.pem" ]; then
+  ~/.acme.sh/acme.sh --issue --dns dns_cf -d "${DOMAIN}"
 fi
 
-# -----------------------------
-# 步骤 5：安装证书到 Nginx
-# -----------------------------
-echo "[5/12] 安装证书到 Nginx"
-~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-    --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
-    --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
-    --reloadcmd "systemctl reload nginx"
+# ===== Step 5：安装证书 =====
+echo "[5/12] 安装 SSL 证书"
+~/.acme.sh/acme.sh --install-cert -d "${DOMAIN}" \
+  --key-file "${SSL_DIR}/key.pem" \
+  --fullchain-file "${SSL_DIR}/fullchain.pem" \
+  --reloadcmd "systemctl reload nginx"
 
-# -----------------------------
-# 步骤 6：安装 SubConverter 后端
-# -----------------------------
-echo "[6/12] 安装 SubConverter"
-mkdir -p /opt/subconverter
-if [ ! -f "/opt/subconverter/subconverter" ]; then
-    wget -O /opt/subconverter/subconverter $SUBCONVERTER_BIN
-    chmod +x /opt/subconverter/subconverter
+# ===== Step 6：SubConverter 后端 =====
+echo "[6/12] 安装 SubConverter 后端"
+mkdir -p "${SUBCONVERTER_DIR}"
+
+if [ ! -f "${SUBCONVERTER_DIR}/subconverter" ]; then
+  echo "[INFO] 下载 SubConverter 二进制"
+  wget -O "${SUBCONVERTER_DIR}/subconverter" \
+    https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter
+  chmod +x "${SUBCONVERTER_DIR}/subconverter"
 fi
 
-# 创建 systemd 服务
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
 Description=SubConverter 服务
 After=network.target
 
 [Service]
-ExecStart=/opt/subconverter/subconverter
+ExecStart=${SUBCONVERTER_DIR}/subconverter
 Restart=always
-RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
@@ -99,105 +81,76 @@ systemctl daemon-reload
 systemctl enable subconverter
 systemctl restart subconverter
 
-# -----------------------------
-# 步骤 7：安装 Node.js（已安装 npm 可跳过）
-# -----------------------------
-echo "[7/12] 确保 Node.js 可用"
-if ! command -v node &> /dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt install -y nodejs
+# ===== Step 7：Sub-Web 前端 =====
+echo "[7/12] 构建 Sub-Web 前端（about300 仓库）"
+if [ ! -d "${SUBWEB_DIR}" ]; then
+  git clone https://github.com/about300/sub-web-modify "${SUBWEB_DIR}"
+  cd "${SUBWEB_DIR}"
+  npm install
+  npm run build
 fi
 
-# -----------------------------
-# 步骤 8：构建 sub-web-modify 前端
-# -----------------------------
-echo "[8/12] 构建 sub-web-modify 前端"
-rm -rf /opt/sub-web-modify
-git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
-cd /opt/sub-web-modify
-# 设置 publicPath 为 /subconvert/
-cat > vue.config.js <<'EOF'
-module.exports = { publicPath: '/subconvert/' }
+# ===== Step 8：示例主页 =====
+echo "[8/12] 准备主页"
+mkdir -p "${WEBROOT}"
+if [ ! -f "${WEBROOT}/index.html" ]; then
+  cat >"${WEBROOT}/index.html" <<EOF
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Welcome</title></head>
+<body>
+<h1>主页正常</h1>
+<p><a href="/subconvert/">进入订阅转换</a></p>
+</body>
+</html>
 EOF
-
-npm install
-npm run build
-
-# -----------------------------
-# 步骤 9：安装 S-UI 面板
-# -----------------------------
-echo "[9/12] 安装 S-UI 面板（本地监听）"
-if [ ! -d "/opt/s-ui" ]; then
-    bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 fi
 
-# -----------------------------
-# 步骤 10：Web 主页
-# -----------------------------
-echo "[10/12] 配置 Web 主页"
-rm -rf /opt/web-home
-git clone https://github.com/about300/vps-deployment.git /opt/web-home
-mv /opt/web-home/web /opt/web-home/current
+# ===== Step 9：Nginx 配置（重点） =====
+echo "[9/12] 配置 Nginx（已修复子路径反代问题）"
 
-# -----------------------------
-# 步骤 11：Nginx 配置
-# -----------------------------
-echo "[11/12] 配置 Nginx"
-cat >/etc/nginx/sites-available/$DOMAIN <<EOF
+cat >/etc/nginx/sites-available/${DOMAIN} <<EOF
 server {
     listen 443 ssl http2;
-    server_name $DOMAIN;
+    server_name ${DOMAIN};
 
-    ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
+    ssl_certificate     ${SSL_DIR}/fullchain.pem;
+    ssl_certificate_key ${SSL_DIR}/key.pem;
 
-    # Web 主页
-    root /opt/web-home/current;
+    # ===== 主页 =====
+    root ${WEBROOT};
     index index.html;
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # SubConverter 前端
+    # ===== Sub-Web 前端 =====
     location /subconvert/ {
-        alias /opt/sub-web-modify/dist/;
+        alias ${SUBWEB_DIR}/dist/;
         index index.html;
         try_files \$uri \$uri/ /index.html;
     }
 
-    # SubConverter API
+    # ===== SubConverter 后端（关键修复）=====
     location /sub/api/ {
-        proxy_pass http://127.0.0.1:25500/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$remote_addr;
-    }
-
-    # VLESS 订阅
-    location /vless/ {
-        proxy_pass http://127.0.0.1:$VLESS_PORT;
+        rewrite ^/sub/api/?(.*)$ /\$1 break;
+        proxy_pass http://127.0.0.1:${SUBCONVERTER_PORT};
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/${DOMAIN} /etc/nginx/sites-enabled/${DOMAIN}
+rm -f /etc/nginx/sites-enabled/default
+
 nginx -t
 systemctl reload nginx
 
-# -----------------------------
-# 步骤 12：安装 AdGuard Home
-# -----------------------------
-echo "[12/12] 安装 AdGuard Home"
-curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
-
-# -----------------------------
-# 完成
-# -----------------------------
-echo "====================================="
-echo "部署完成 🎉"
-echo "Web 主页: https://$DOMAIN"
-echo "SubConverter API: https://$DOMAIN/sub/api/"
-echo "SubConverter 前端: https://$DOMAIN/subconvert/"
-echo "S-UI 面板: http://127.0.0.1:2095"
-echo "====================================="
+# ===== Step 10：完成 =====
+echo "=============================="
+echo "部署完成 ✅"
+echo "主页：https://${DOMAIN}/"
+echo "订阅前端：https://${DOMAIN}/subconvert/"
+echo "订阅后端：https://${DOMAIN}/sub/api/"
+echo "=============================="

@@ -31,9 +31,10 @@ echo "[2/12] 配置防火墙"
 ufw allow 22
 ufw allow 80
 ufw allow 443
-ufw allow 3000    # AdGuard 反代端口
-ufw allow 8445    # AdGuard 本地备用端口
-ufw allow 8446    # AdGuard 本地备用端口
+ufw allow 3000      # AdGuard 反代
+ufw allow 8445      # AdGuard 本地 DoH
+ufw allow 8446      # AdGuard 本地 DoT
+ufw allow 2550
 ufw --force enable
 
 # -----------------------------
@@ -98,51 +99,61 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 # -----------------------------
-# 步骤 7：构建 sub-web-modify 前端
+# 步骤 7：安装 Node.js（已安装 npm 可跳过）
 # -----------------------------
-echo "[7/12] 构建 sub-web-modify 前端"
+echo "[7/12] 确保 Node.js 可用"
+if ! command -v node &> /dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt install -y nodejs
+fi
+
+# -----------------------------
+# 步骤 8：构建 sub-web-modify 前端
+# -----------------------------
+echo "[8/12] 构建 sub-web-modify 前端"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
 
-# 设置 publicPath 为 /subconvert/
+# 修改 .env
+cat >/opt/sub-web-modify/.env <<EOF
+VUE_APP_PROJECT="https://github.com/youshandefeiyang/sub-web-modify"
+VUE_APP_BOT_LINK="https://t.me/feiyangdigital"
+VUE_APP_BILIBILI_LINK="https://space.bilibili.com/138129883"
+VUE_APP_YOUTUBE_LINK="https://youtube.com/channel/UCKHJ2UPlkNsDRj1cVXi0UsA"
+VUE_APP_BASIC_VIDEO="https://www.youtube.com/watch?v=C4WV4223uYw"
+VUE_APP_ADVANCED_VIDEO="https://www.youtube.com/watch?v=cHs-J2P5CT0"
+VUE_APP_SCRIPT_CONFIG="https://github.com/tindy2013/subconverter/blob/a24cb7c00a7e5a71ef2e6c0d64d84d91bc7a21d6/README-cn.md?plain=1#L703-L719"
+VUE_APP_FILTER_CONFIG="https://github.com/tindy2013/subconverter/blob/a24cb7c00a7e5a71ef2e6c0d64d84d91bc7a21d6/README-cn.md?plain=1#L514-L531"
+VUE_APP_SUBCONVERTER_REMOTE_CONFIG="https://subconverter.oss-ap-southeast-1.aliyuncs.com/Rules/RemoteConfig/universal/urltest.ini"
+VUE_APP_SUBCONVERTER_DEFAULT_BACKEND="/sub/api/sub"
+VUE_APP_MYURLS_DEFAULT_BACKEND="/sub/api/short"
+VUE_APP_CONFIG_UPLOAD_BACKEND="/sub/api/upload"
+EOF
+
+# publicPath
 cat > vue.config.js <<'EOF'
 module.exports = { publicPath: '/subconvert/' }
 EOF
 
-# 确保.env 已修改成自建后端
 npm install
 npm run build
 
 # -----------------------------
-# 步骤 8：安装 S-UI 面板
+# 步骤 9：安装 S-UI 面板
 # -----------------------------
-echo "[8/12] 安装 S-UI 面板（本地监听）"
+echo "[9/12] 安装 S-UI 面板（本地监听）"
 if [ ! -d "/opt/s-ui" ]; then
     bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 fi
 
 # -----------------------------
-# 步骤 9：Web 主页
+# 步骤 10：Web 主页
 # -----------------------------
-echo "[9/12] 配置 Web 主页"
-rm -rf /opt/web-home
+echo "[10/12] 配置 Web 主页"
 mkdir -p /opt/web-home/current
-
-# 自动更新个人主页（可修改 css/index.html）
-cat > /opt/web-home/update.sh <<'EOF'
-#!/usr/bin/env bash
-cd /opt/web-home/current
-git pull origin main || echo "[INFO] 本地主页更新失败"
-EOF
-chmod +x /opt/web-home/update.sh
-
-# -----------------------------
-# 步骤 10：安装 AdGuard Home
-# -----------------------------
-echo "[10/12] 安装 AdGuard Home"
-if [ ! -d "/opt/adguardhome" ]; then
-    curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+if [ ! -d "/opt/web-home/current" ]; then
+    git clone https://github.com/about300/vps-deployment.git /opt/web-home/current
 fi
 
 # -----------------------------
@@ -176,6 +187,7 @@ server {
         proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Real-IP \$remote_addr;
     }
 
     # VLESS 订阅
@@ -185,13 +197,12 @@ server {
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
 
-    # AdGuard Home 反代
+    # AdGuard Home 反代 (管理端口 3000)
     location /adguard/ {
         proxy_pass http://127.0.0.1:3000/;
         proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 EOF
@@ -201,14 +212,19 @@ nginx -t
 systemctl reload nginx
 
 # -----------------------------
-# 步骤 12：完成
+# 步骤 12：安装 AdGuard Home
+# -----------------------------
+echo "[12/12] 安装 AdGuard Home"
+curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+
+# -----------------------------
+# 完成
 # -----------------------------
 echo "====================================="
 echo "部署完成 🎉"
 echo "Web 主页: https://$DOMAIN"
 echo "SubConverter API: https://$DOMAIN/sub/api/"
 echo "SubConverter 前端: https://$DOMAIN/subconvert/"
+echo "AdGuard Home 管理: https://$DOMAIN/adguard/"
 echo "S-UI 面板: http://127.0.0.1:2095"
-echo "AdGuard Home (反代): https://$DOMAIN/adguard/"
-echo "本地 AdGuard Home 端口: 3000 / 8445 / 8446"
 echo "====================================="

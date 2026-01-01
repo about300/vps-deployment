@@ -1,159 +1,220 @@
 #!/usr/bin/env bash
 set -e
-echo "===== VPS Full Stack Deployment ====="
+echo "===== VPS 全栈部署（最终版） ====="
 
-# Step 1: Input your domain and Cloudflare credentials
-read -rp "Please enter your domain (e.g., web.mycloudshare.org): " DOMAIN
-read -rp "Please enter your Cloudflare email: " CF_Email
-read -rp "Please enter your Cloudflare API Token: " CF_Token
+# -----------------------------
+# 步骤 0：预定义变量
+# -----------------------------
+read -rp "请输入您的域名 (例如：web.mycloudshare.org): " DOMAIN
+read -rp "请输入 Cloudflare 邮箱: " CF_Email
+read -rp "请输入 Cloudflare API Token: " CF_Token
 export CF_Email
 export CF_Token
 
-# Pre-define the VLESS port (change this as needed)
-VLESS_PORT=5000  # You can change this to any port you prefer for VLESS
+# VLESS 默认端口
+VLESS_PORT=5000
 
-echo "[1/12] Update system and install dependencies"
+# SubConverter 二进制下载链接
+SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
+
+# Web主页GitHub仓库
+WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
+
+# -----------------------------
+# 步骤 1：更新系统与依赖
+# -----------------------------
+echo "[1/12] 更新系统与安装依赖"
 apt update -y
-apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3
+apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 npm
 
-echo "[2/12] Configure firewall"
+# -----------------------------
+# 步骤 2：防火墙配置
+# -----------------------------
+echo "[2/12] 配置防火墙"
 ufw allow 22
 ufw allow 80
 ufw allow 443
-ufw allow 8443
-ufw allow 3000
+ufw allow 3000   # AdGuard Home反代端口
 ufw allow 8445
-ufw allow 53
-ufw allow 2550
+ufw allow 8446
+ufw allow 25500
+ufw allow 2095
+ufw allow 5000
 ufw --force enable
 
-echo "[3/12] Install acme.sh for DNS-01 verification"
-curl https://get.acme.sh | sh
-source ~/.bashrc
+# -----------------------------
+# 步骤 3：安装 acme.sh
+# -----------------------------
+echo "[3/12] 安装 acme.sh（DNS-01）"
+if [ ! -d "$HOME/.acme.sh" ]; then
+    curl https://get.acme.sh | sh
+    source ~/.bashrc
+else
+    echo "[INFO] acme.sh 已安装，跳过"
+fi
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 mkdir -p /etc/nginx/ssl/$DOMAIN
 
-# Use DNS-01 verification via Cloudflare
-echo "[4/12] Issue SSL certificate via Cloudflare"
-~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
+# -----------------------------
+# 步骤 4：申请 SSL 证书
+# -----------------------------
+echo "[4/12] 申请或检查 SSL 证书"
+if [ ! -f "/etc/nginx/ssl/$DOMAIN/fullchain.pem" ]; then
+    ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
+else
+    echo "[INFO] SSL 证书已存在，跳过申请"
+fi
 
-# Install certificate to Nginx
+# -----------------------------
+# 步骤 5：安装证书到 Nginx
+# -----------------------------
+echo "[5/12] 安装证书到 Nginx"
 ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-  --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
-  --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
-  --reloadcmd "systemctl reload nginx"
+    --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
+    --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
+    --reloadcmd "systemctl reload nginx"
 
-echo "[5/12] Install SubConverter Backend"
-# Check if SubConverter exists, if not, clone and compile it
+# -----------------------------
+# 步骤 6：安装 SubConverter 后端
+# -----------------------------
+echo "[6/12] 安装 SubConverter"
+mkdir -p /opt/subconverter
 if [ ! -f "/opt/subconverter/subconverter" ]; then
-    echo "[INFO] SubConverter not found, cloning and building..."
-    mkdir -p /opt/subconverter
-    cd /opt/subconverter
-    git clone https://github.com/about300/vps-deployment.git
-    cd vps-deployment/bin
-    wget -O subconverter https://raw.githubusercontent.com/about300/vps-deployment/main/bin/subconverter
-    chmod +x subconverter
-    cat >/etc/systemd/system/subconverter.service <<EOF
+    wget -O /opt/subconverter/subconverter $SUBCONVERTER_BIN
+    chmod +x /opt/subconverter/subconverter
+fi
+
+# 创建 systemd 服务
+cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
-Description=SubConverter Service
+Description=SubConverter 服务
 After=network.target
 
 [Service]
-ExecStart=/opt/subconverter/vps-deployment/bin/subconverter
+ExecStart=/opt/subconverter/subconverter
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    systemctl daemon-reload
-    systemctl enable subconverter
-    systemctl restart subconverter
-else
-    echo "[INFO] SubConverter found, skipping clone."
+
+systemctl daemon-reload
+systemctl enable subconverter
+systemctl restart subconverter
+
+# -----------------------------
+# 步骤 7：安装 Node.js（已安装 npm 可跳过）
+# -----------------------------
+echo "[7/12] 确保 Node.js 可用"
+if ! command -v node &> /dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt install -y nodejs
 fi
 
-echo "[6/12] Install Node.js (LTS)"
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt install -y nodejs
+# -----------------------------
+# 步骤 8：构建 sub-web-modify 前端
+# -----------------------------
+echo "[8/12] 构建 sub-web-modify 前端"
+rm -rf /opt/sub-web-modify
+git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
+cd /opt/sub-web-modify
+# 设置 publicPath 为 /subconvert/
+cat > vue.config.js <<'EOF'
+module.exports = { publicPath: '/subconvert/' }
+EOF
 
-echo "[7/12] Build sub-web-modify (from about300 repo)"
-# Check if sub-web-modify exists, if not, clone and build it
-if [ ! -d "/opt/sub-web-modify" ]; then
-    echo "[INFO] sub-web-modify not found, cloning and building..."
-    rm -rf /opt/sub-web-modify
-    git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
-    cd /opt/sub-web-modify
-    npm install
-    npm run build
-else
-    echo "[INFO] sub-web-modify found, skipping clone."
+npm install
+npm run build
+
+# -----------------------------
+# 步骤 9：安装 S-UI 面板
+# -----------------------------
+echo "[9/12] 安装 S-UI 面板（本地监听）"
+if [ ! -d "/opt/s-ui" ]; then
+    bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 fi
 
-echo "[8/12] Install S-UI Panel (only local listening)"
-bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+# -----------------------------
+# 步骤 10：Web 主页（自动更新机制）
+# -----------------------------
+echo "[10/12] 配置 Web 主页"
+rm -rf /opt/web-home
+mkdir -p /opt/web-home
+git clone $WEB_HOME_REPO /opt/web-home/tmp
+mv /opt/web-home/tmp/web /opt/web-home/current
+rm -rf /opt/web-home/tmp
 
-echo "[9/12] Clone Web Files from GitHub"
-# Check if web-home folder exists, if not, clone it
-if [ ! -d "/opt/web-home" ]; then
-    echo "[INFO] web-home not found, cloning..."
-    rm -rf /opt/web-home
-    git clone https://github.com/about300/vps-deployment.git /opt/web-home
-    mv /opt/web-home/web /opt/web-home/current
-else
-    echo "[INFO] web-home found, skipping clone."
+# -----------------------------
+# 步骤 11：安装 AdGuard Home
+# -----------------------------
+echo "[11/12] 安装 AdGuard Home"
+if [ ! -d "/opt/AdGuardHome" ]; then
+    curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
 fi
 
-echo "[10/12] Configure Nginx for Web and API"
+# -----------------------------
+# 步骤 12：配置 Nginx
+# -----------------------------
+echo "[12/12] 配置 Nginx"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
     server_name $DOMAIN;
-    
+
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    # 主页：指向 Web 内容并支持搜索功能
+    # Web主页
     root /opt/web-home/current;
     index index.html;
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # 订阅转换前端：指向 Sub-Web-Modify 构建的静态文件
+    # SubConverter 前端
     location /subconvert/ {
         alias /opt/sub-web-modify/dist/;
-        try_files \$uri \$uri/ /subconvert/index.html;
+        index index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 
-    # 订阅转换后端：代理到本地 SubConverter 服务
+    # SubConverter API
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
 
-    # VLESS 订阅：通过反向代理将流量转发到 S-UI 中设置的 VLESS 服务
+    # VLESS 订阅
     location /vless/ {
-        proxy_pass http://127.0.0.1:$VLESS_PORT;  # 使用预设的端口
+        proxy_pass http://127.0.0.1:$VLESS_PORT;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
+
+    # AdGuard Home 反代
+    location /adguard/ {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
 }
 EOF
+
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
 nginx -t
 systemctl reload nginx
 
-echo "[11/12] Configure DNS-01 for Let's Encrypt"
-echo "[INFO] Using Cloudflare API for DNS-01"
-
-echo "[12/12] Install AdGuard Home (Port 3000)"
-curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
-
-echo "[13/12] Finish 🎉"
+# -----------------------------
+# 完成
+# -----------------------------
 echo "====================================="
-echo "Web Home: https://$DOMAIN"
+echo "部署完成 🎉"
+echo "Web主页: https://$DOMAIN"
+echo "SubConverter 前端: https://$DOMAIN/subconvert/"
 echo "SubConverter API: https://$DOMAIN/sub/api/"
-echo "S-UI Panel: http://127.0.0.1:2095"
+echo "S-UI 面板: http://127.0.0.1:2095"
+echo "AdGuard Home: https://$DOMAIN/adguard/  (本地端口 3000/8445/8446 可用)"
 echo "====================================="

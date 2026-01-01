@@ -17,9 +17,6 @@ VLESS_PORT=5000
 # SubConverter 二进制下载链接
 SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
 
-# Web主页GitHub仓库
-WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
-
 # -----------------------------
 # 步骤 1：更新系统与依赖
 # -----------------------------
@@ -34,12 +31,9 @@ echo "[2/12] 配置防火墙"
 ufw allow 22
 ufw allow 80
 ufw allow 443
-ufw allow 3000   # AdGuard Home反代端口
-ufw allow 8445
-ufw allow 8446
-ufw allow 25500
-ufw allow 2095
-ufw allow 5000
+ufw allow 3000    # AdGuard 反代端口
+ufw allow 8445    # AdGuard 本地备用端口
+ufw allow 8446    # AdGuard 本地备用端口
 ufw --force enable
 
 # -----------------------------
@@ -104,59 +98,57 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 # -----------------------------
-# 步骤 7：安装 Node.js（已安装 npm 可跳过）
+# 步骤 7：构建 sub-web-modify 前端
 # -----------------------------
-echo "[7/12] 确保 Node.js 可用"
-if ! command -v node &> /dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt install -y nodejs
-fi
-
-# -----------------------------
-# 步骤 8：构建 sub-web-modify 前端
-# -----------------------------
-echo "[8/12] 构建 sub-web-modify 前端"
+echo "[7/12] 构建 sub-web-modify 前端"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
+
 # 设置 publicPath 为 /subconvert/
 cat > vue.config.js <<'EOF'
 module.exports = { publicPath: '/subconvert/' }
 EOF
 
+# 确保.env 已修改成自建后端
 npm install
 npm run build
 
 # -----------------------------
-# 步骤 9：安装 S-UI 面板
+# 步骤 8：安装 S-UI 面板
 # -----------------------------
-echo "[9/12] 安装 S-UI 面板（本地监听）"
+echo "[8/12] 安装 S-UI 面板（本地监听）"
 if [ ! -d "/opt/s-ui" ]; then
     bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 fi
 
 # -----------------------------
-# 步骤 10：Web 主页（自动更新机制）
+# 步骤 9：Web 主页
 # -----------------------------
-echo "[10/12] 配置 Web 主页"
+echo "[9/12] 配置 Web 主页"
 rm -rf /opt/web-home
-mkdir -p /opt/web-home
-git clone $WEB_HOME_REPO /opt/web-home/tmp
-mv /opt/web-home/tmp/web /opt/web-home/current
-rm -rf /opt/web-home/tmp
+mkdir -p /opt/web-home/current
+
+# 自动更新个人主页（可修改 css/index.html）
+cat > /opt/web-home/update.sh <<'EOF'
+#!/usr/bin/env bash
+cd /opt/web-home/current
+git pull origin main || echo "[INFO] 本地主页更新失败"
+EOF
+chmod +x /opt/web-home/update.sh
 
 # -----------------------------
-# 步骤 11：安装 AdGuard Home
+# 步骤 10：安装 AdGuard Home
 # -----------------------------
-echo "[11/12] 安装 AdGuard Home"
-if [ ! -d "/opt/AdGuardHome" ]; then
+echo "[10/12] 安装 AdGuard Home"
+if [ ! -d "/opt/adguardhome" ]; then
     curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
 fi
 
 # -----------------------------
-# 步骤 12：配置 Nginx
+# 步骤 11：Nginx 配置
 # -----------------------------
-echo "[12/12] 配置 Nginx"
+echo "[11/12] 配置 Nginx"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
@@ -165,7 +157,7 @@ server {
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    # Web主页
+    # Web 主页
     root /opt/web-home/current;
     index index.html;
     location / {
@@ -197,8 +189,9 @@ server {
     location /adguard/ {
         proxy_pass http://127.0.0.1:3000/;
         proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$remote_addr;
-        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 EOF
@@ -208,13 +201,14 @@ nginx -t
 systemctl reload nginx
 
 # -----------------------------
-# 完成
+# 步骤 12：完成
 # -----------------------------
 echo "====================================="
 echo "部署完成 🎉"
-echo "Web主页: https://$DOMAIN"
-echo "SubConverter 前端: https://$DOMAIN/subconvert/"
+echo "Web 主页: https://$DOMAIN"
 echo "SubConverter API: https://$DOMAIN/sub/api/"
+echo "SubConverter 前端: https://$DOMAIN/subconvert/"
 echo "S-UI 面板: http://127.0.0.1:2095"
-echo "AdGuard Home: https://$DOMAIN/adguard/  (本地端口 3000/8445/8446 可用)"
+echo "AdGuard Home (反代): https://$DOMAIN/adguard/"
+echo "本地 AdGuard Home 端口: 3000 / 8445 / 8446"
 echo "====================================="

@@ -56,10 +56,12 @@ echo "[5/12] 安装 SSL 证书到 Nginx"
   --reloadcmd "systemctl reload nginx"
 
 echo "[6/12] 安装 SubConverter 后端"
-# 检查 SubConverter 二进制文件是否存在，如果没有则复制二进制文件
+# 检查 SubConverter 二进制文件是否存在，如果没有则下载并复制
 if [ ! -f "/opt/subconverter/subconverter" ]; then
-  echo "[INFO] 未找到 SubConverter 二进制文件，正在复制..."
-  cp https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter /opt/subconverter/subconverter
+  echo "[INFO] 未找到 SubConverter 二进制文件，正在下载..."
+  mkdir -p /opt/subconverter
+  # 使用 wget 下载 SubConverter 二进制文件
+  wget https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter -O /opt/subconverter/subconverter
   chmod +x /opt/subconverter/subconverter
   cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
@@ -78,7 +80,7 @@ EOF
   systemctl enable subconverter
   systemctl restart subconverter
 else
-  echo "[INFO] SubConverter 二进制文件已存在，跳过复制。"
+  echo "[INFO] SubConverter 二进制文件已存在，跳过下载。"
 fi
 
 echo "[7/12] 安装 Node.js (LTS)"

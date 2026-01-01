@@ -25,7 +25,7 @@
 step2
 
     ```bash
-    bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/text.sh)
+    bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/installbakup.sh)
 
 
 

@@ -1,30 +1,87 @@
-body {
+* {
     margin: 0;
-    font-family: Arial, sans-serif;
-    background: #f3f3f3;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
 }
 
+html, body {
+    width: 100%;
+    height: 100%;
+}
+
+/* 背景 */
+.background {
+    position: fixed;
+    inset: 0;
+    background: url("/wallpaper/current.jpg") center / cover no-repeat;
+    z-index: -2;
+}
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: -1;
+}
+
+/* 主体容器 */
 .container {
-    text-align: center;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
+/* Logo */
 .logo {
-    width: 200px;
-    margin-bottom: 20px;
+    width: 120px;
+    margin-bottom: 30px;
 }
 
-input[type="text"] {
-    padding: 10px;
-    width: 300px;
+/* 搜索框 */
+form {
+    display: flex;
+    width: 320px;
+    max-width: 90%;
+}
+
+form input {
+    flex: 1;
+    padding: 12px;
     font-size: 16px;
+    border: none;
+    outline: none;
+    border-radius: 6px 0 0 6px;
 }
 
-button {
-    padding: 10px 20px;
+form button {
+    padding: 0 18px;
+    border: none;
+    background: #0078ff;
+    color: #fff;
     font-size: 16px;
     cursor: pointer;
+    border-radius: 0 6px 6px 0;
+}
+
+form button:hover {
+    background: #005ed6;
+}
+
+/* Sub-Web 按钮 */
+.subweb-btn {
+    margin-top: 22px;
+    padding: 12px 28px;
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 8px;
+    backdrop-filter: blur(6px);
+    transition: background 0.2s;
+}
+
+.subweb-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
 }

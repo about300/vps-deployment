@@ -48,7 +48,8 @@ echo "[5/12] 安装SubConverter后台"
 if [ ! -f "/opt/subconverter/bin/subconverter" ]; then
     echo "[INFO] 未找到SubConverter，正在复制二进制文件..."
     mkdir -p /opt/subconverter/bin
-    cp /path/to/your/subconverter /opt/subconverter/bin/  # 你需要提供二进制文件的路径
+    # 将路径替换为你的subconverter文件实际路径
+    cp /opt/vps-deployment/bin/subconverter /opt/subconverter/bin/  # 修改为你实际的路径
     chmod +x /opt/subconverter/bin/subconverter
 
     # 创建systemd服务来运行SubConverter

@@ -56,12 +56,10 @@ echo "[5/12] 安装 SSL 证书到 Nginx"
   --reloadcmd "systemctl reload nginx"
 
 echo "[6/12] 安装 SubConverter 后端"
-# 检查 SubConverter 二进制文件是否存在，如果没有则下载并复制
+# 检查 SubConverter 二进制文件是否存在，如果没有则复制二进制文件
 if [ ! -f "/opt/subconverter/subconverter" ]; then
-  echo "[INFO] 未找到 SubConverter 二进制文件，正在下载..."
-  mkdir -p /opt/subconverter
-  # 使用 wget 下载 SubConverter 二进制文件
-  wget https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter -O /opt/subconverter/subconverter
+  echo "[INFO] 未找到 SubConverter 二进制文件，正在从 GitHub 下载并复制..."
+  wget -O /opt/subconverter/subconverter https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter
   chmod +x /opt/subconverter/subconverter
   cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
@@ -80,17 +78,17 @@ EOF
   systemctl enable subconverter
   systemctl restart subconverter
 else
-  echo "[INFO] SubConverter 二进制文件已存在，跳过下载。"
+  echo "[INFO] SubConverter 二进制文件已存在，跳过复制。"
 fi
 
 echo "[7/12] 安装 Node.js (LTS)"
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 
 apt install -y nodejs
 
 echo "[8/12] 构建 sub-web-modify (来自 about300 仓库)"
 # 检查 sub-web-modify 是否存在，如果不存在，则克隆并构建
 if [ ! -d "/opt/sub-web-modify" ]; then
-  echo "[INFO] 未找到 sub-web-modify，正在克隆并构建..."
+  echo "[INFO] 未找到 sub-web-modify，正在克隆并构建... "
   rm -rf /opt/sub-web-modify
   git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
   cd /opt/sub-web-modify
@@ -103,7 +101,7 @@ fi
 echo "[9/12] 安装 S-UI 面板 (仅本地监听)"
 # 检查 S-UI 面板是否已安装
 if [ ! -d "/opt/s-ui" ]; then
-  echo "[INFO] S-UI 面板未安装，正在安装..."
+  echo "[INFO] S-UI 面板未安装，正在安装... "
   bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 else
   echo "[INFO] S-UI 面板已安装，跳过安装。"
@@ -112,7 +110,7 @@ fi
 echo "[10/12] 克隆 Web 文件从 GitHub"
 # 检查 web-home 文件夹是否存在，如果没有则克隆
 if [ ! -d "/opt/web-home" ]; then
-  echo "[INFO] 未找到 web-home，正在克隆..."
+  echo "[INFO] 未找到 web-home，正在克隆... "
   rm -rf /opt/web-home
   git clone https://github.com/about300/vps-deployment.git /opt/web-home
   mv /opt/web-home/web /opt/web-home/current

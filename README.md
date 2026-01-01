@@ -16,6 +16,15 @@
 
 
 
+# VPS 一键部署脚本
 
+# step2 
 
 bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/text.sh)
+
+
+
+
+
+
+

@@ -9,8 +9,8 @@ read -rp "Please enter your Cloudflare API Token: " CF_Token
 export CF_Email
 export CF_Token
 
-# Pre-define the VLESS port (change this as needed)
-VLESS_PORT=5000  # You can change this to any port you prefer for VLESS
+# Pre-define the VLESS port (this is the port that you will configure in S-UI panel later)
+VLESS_PORT=5000  # Default port for VLESS, which will be used in the S-UI panel for VLESS configuration
 
 echo "[1/12] Update system and install dependencies"
 apt update -y
@@ -104,16 +104,7 @@ else
     echo "[INFO] web-home found, skipping clone."
 fi
 
-echo "[10/12] Ensure Web Files Are Correct"
-# Download the latest index.html file directly from GitHub repository
-echo "[INFO] Downloading index.html from GitHub repository"
-curl -L -o /opt/web-home/current/index.html https://raw.githubusercontent.com/about300/vps-deployment/main/web/index.html
-
-# Add 'Enter Sub-Web' link to the downloaded index.html
-echo "[INFO] Adding 'Enter Sub-Web' link to index.html"
-echo '<a href="/subconvert/" style="position: absolute; top: 10px; right: 20px; padding: 10px; background-color: #008CBA; color: white; border-radius: 5px; text-decoration: none;">Enter Sub-Web</a>' >> /opt/web-home/current/index.html
-
-echo "[11/12] Configure Nginx for Web and API"
+echo "[10/12] Configure Nginx for Web and API"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
@@ -122,20 +113,20 @@ server {
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    # Home Page: Point to Web Content and support search functionality
+    # 主页：指向 Web 内容并支持搜索功能
     root /opt/web-home/current;
     index index.html;
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # Sub-Web: Point to Sub-Web's build files
+    # 订阅转换前端：指向 Sub-Web-Modify 构建的静态文件
     location /subconvert/ {
         alias /opt/sub-web-modify/dist/;
         try_files \$uri \$uri/ /subconvert/index.html;
     }
 
-    # SubConverter Backend: Proxy to local SubConverter service
+    # 订阅转换后端：代理到本地 SubConverter 服务
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
@@ -153,6 +144,9 @@ EOF
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
 nginx -t
 systemctl reload nginx
+
+echo "[11/12] Configure DNS-01 for Let's Encrypt"
+echo "[INFO] Using Cloudflare API for DNS-01"
 
 echo "[12/12] Install AdGuard Home (Port 3000)"
 curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh

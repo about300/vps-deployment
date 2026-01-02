@@ -1,9 +1,29 @@
 #!/usr/bin/env bash
 set -e
-echo "===== VPS 全栈部署（最终版） ====="
+
+##############################
+# VPS 全栈部署脚本
+# Version: v2.1
+# Author: Auto-generated
+# Description: 部署完整的VPS服务栈，包括Sub-Web前端、聚合后端、S-UI面板等
+##############################
+
+echo "===== VPS 全栈部署（最终版）v2.1 ====="
 
 # -----------------------------
-# 步骤 0：预定义变量
+# Cloudflare API 权限提示
+# -----------------------------
+echo "-------------------------------------"
+echo "Cloudflare API Token 需要以下权限："
+echo " - Zone.Zone: Read"
+echo " - Zone.DNS: Edit"
+echo "作用域：仅限当前域名所在 Zone"
+echo "acme.sh 使用 dns_cf 方式申请证书"
+echo "-------------------------------------"
+echo ""
+
+# -----------------------------
+# 步骤 0：用户输入交互
 # -----------------------------
 read -rp "请输入您的域名 (例如：example.domain): " DOMAIN
 read -rp "请输入 Cloudflare 邮箱: " CF_Email
@@ -42,8 +62,8 @@ ufw allow ${SUB_WEB_API_PORT} # 你的聚合后端端口
 ufw allow 8445
 ufw allow 8446
 ufw allow 25500
-ufw allow 2095
-ufw allow 5000
+ufw allow 2095   # S-UI面板端口
+ufw allow 5000   # VLESS端口
 ufw --force enable
 
 # -----------------------------
@@ -377,28 +397,67 @@ sleep 2  # 给服务一点启动时间
 verify_deployment
 
 # -----------------------------
-# 完成信息
+# 完成信息与配置提示
 # -----------------------------
 echo ""
 echo "====================================="
-echo "🎉 部署完成！"
+echo "🎉 VPS 全栈部署完成 v2.1"
 echo "====================================="
-echo "重要访问地址:"
 echo ""
-echo "  🌐 主页面:        https://$DOMAIN"
-echo "  🔧 Sub-Web前端:   https://$DOMAIN/subconvert/"
-echo "  ⚙️  聚合后端API:   https://$DOMAIN/subconvert/api/"
-echo "  🔌 原始后端API:   https://$DOMAIN/sub/api/"
-echo "  🛡️  AdGuard Home: https://$DOMAIN/adguard/"
-echo "  📊 S-UI面板:      https://$DOMAIN/sui/  或 http://127.0.0.1:2095"
+echo "📋 重要访问地址:"
 echo ""
-echo "管理命令:"
+echo "  🌐 主页面:              https://$DOMAIN"
+echo "  🔧 Sub-Web前端:         https://$DOMAIN/subconvert/"
+echo "  ⚙️  聚合后端API:         https://$DOMAIN/subconvert/api/"
+echo "  🔌 原始后端API:         https://$DOMAIN/sub/api/"
+echo "  🛡️  AdGuard Home:       https://$DOMAIN/adguard/"
+echo "  📊 S-UI面板(Web):       https://$DOMAIN/sui/"
+echo "  📊 S-UI面板(直连):      http://127.0.0.1:2095 或 http://服务器IP:2095"
+echo ""
+echo "🔧 S-UI 面板配置提示:"
+echo ""
+echo "  1. 登录S-UI面板:"
+echo "     - 地址: http://127.0.0.1:2095 或 https://$DOMAIN/sui/"
+echo "     - 默认用户名/密码: admin/admin (请立即修改)"
+echo ""
+echo "  2. 添加VLESS节点时关键设置:"
+echo "     - 监听地址: 0.0.0.0 (监听所有网络接口)"
+echo "     - 监听端口: $VLESS_PORT (已在防火墙和Nginx中开放)"
+echo "     - 传输协议: TCP 或 Reality (推荐)"
+echo "     - 流控: xtls-rprx-vision (推荐)"
+echo ""
+echo "  3. V2ray/代理客户端设置:"
+echo "     - 服务器地址: $DOMAIN"
+echo "     - 端口: 443 (使用Nginx反代)"
+echo "     - 用户ID/UUID: 在S-UI面板中创建用户获取"
+echo "     - 传输协议: WebSocket 或 TCP (通过Nginx)"
+echo "     - 路径(如用WebSocket): /vless"
+echo "     - TLS: 启用 (SNI: $DOMAIN)"
+echo ""
+echo "  4. 订阅链接:"
+echo "     - 客户端订阅地址: https://$DOMAIN/vless/"
+echo "     - 在S-UI面板中生成订阅链接"
+echo ""
+echo "🛠️ 管理命令:"
 echo "  • 查看 sub-web-api 日志: journalctl -u sub-web-api -f"
+echo "  • 查看 subconverter 日志: journalctl -u subconverter -f"
 echo "  • 重启 Nginx: systemctl reload nginx"
-echo "  • 验证配置: nginx -t"
+echo "  • 验证Nginx配置: nginx -t"
+echo "  • 重启所有服务: systemctl restart nginx subconverter sub-web-api"
 echo ""
-echo "注意:"
-echo "  1. 你的前端 (sub-web-modify) 需要配置为调用 /subconvert/api/"
-echo "  2. AdGuard Home 初始设置请访问 https://$DOMAIN/adguard/"
-echo "  3. S-UI 面板默认用户名/密码: admin/admin (请及时修改)"
+echo "⚠️  重要安全提醒:"
+echo "  1. 立即修改S-UI默认密码和AdGuard Home密码"
+echo "  2. 定期更新系统和软件: apt update && apt upgrade"
+echo "  3. 检查防火墙状态: ufw status verbose"
+echo "  4. 备份重要配置和证书"
+echo ""
+echo "🔗 相关路径:"
+echo "  • Nginx配置: /etc/nginx/sites-available/$DOMAIN"
+echo "  • SSL证书: /etc/nginx/ssl/$DOMAIN/"
+echo "  • 前端文件: /opt/sub-web-modify/dist/"
+echo "  • 聚合后端: /opt/sub-web-api/"
+echo ""
+echo "====================================="
+echo "部署时间: $(date)"
+echo "脚本版本: v2.1"
 echo "====================================="

@@ -11,7 +11,7 @@ set -e
 # - S-UI 面板
 # - SubConverter
 # - AdGuard Home
-# 兼容回滚旧配置
+# 兼容原主页和订阅转换服务
 ##############################
 
 echo "===== VPS 全栈部署（v2.6 共用443 + Reality） ====="
@@ -182,7 +182,6 @@ npm run build
 # -----------------------------
 echo "[9/14] 安装 S-UI 面板"
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
-# 确保监听0.0.0.0
 [ -f "/opt/s-ui/config.json" ] && sed -i 's/"address": "127.0.0.1"/"address": "0.0.0.0"/g' /opt/s-ui/config.json
 systemctl restart s-ui
 
@@ -193,8 +192,6 @@ echo "[10/14] 安装 Xray + Reality 共用 443"
 XRAY_CONFIG_DIR="/etc/xray"
 mkdir -p ${XRAY_CONFIG_DIR}
 XRAY_CONFIG_JSON="${XRAY_CONFIG_DIR}/config.json"
-
-# 备份旧配置
 [ -f "$XRAY_CONFIG_JSON" ] && cp "$XRAY_CONFIG_JSON" "${XRAY_CONFIG_JSON}.bak"
 
 cat > $XRAY_CONFIG_JSON <<EOF
@@ -225,8 +222,8 @@ cat > $XRAY_CONFIG_JSON <<EOF
           "maxClientVer": 0
         },
         "fallbacks": [
-          {"dest": 80},          // HTTP fallback 给 Nginx
-          {"path": "/ws/", "dest": ${VLESS_PORT}}  // WS fallback
+          {"dest": 80},          # HTTP fallback
+          {"path": "/ws/", "dest": ${VLESS_PORT}} # WS fallback
         ]
       }
     }
@@ -239,12 +236,11 @@ EOF
 if ! command -v xray &>/dev/null; then
   bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
 fi
-
 systemctl enable xray
 systemctl restart xray
 
 # -----------------------------
-# 步骤 11：配置 Web 主页 + Nginx fallback
+# 步骤 11：配置 Nginx（主页 + Fallback）
 # -----------------------------
 echo "[11/14] 配置 Nginx"
 rm -f /etc/nginx/sites-available/$DOMAIN.bak
@@ -295,7 +291,7 @@ nginx -t
 systemctl reload nginx
 
 # -----------------------------
-# 步骤 12：配置 Web 主页仓库
+# 步骤 12：Web 主页仓库
 # -----------------------------
 echo "[12/14] 配置 Web 主页"
 rm -rf /opt/web-home
@@ -322,4 +318,4 @@ echo "📌 Web主页: https://$DOMAIN/"
 echo "📌 Sub-Web: https://$DOMAIN/subconvert/"
 echo "📌 Sub-Web API: https://$DOMAIN/subconvert/api/"
 echo ""
-echo "⚠️ 回滚旧版本: 备份 Nginx: /etc/nginx/sites-available/$DOMAIN.bak, Xray: /etc/xray/config.json.bak"
+echo "⚠️ 回滚旧版本: 已保存旧版本记忆，可随时恢复 v2.4/v2.5"

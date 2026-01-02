@@ -29,7 +29,7 @@ step2
 
 
 
-bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/installv2.6.sh)
+bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/installV2.6.sh)
 
 
 

@@ -3,12 +3,12 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v2.1
+# Version: v2.2
 # Author: Auto-generated
 # Description: 部署完整的VPS服务栈，包括Sub-Web前端、聚合后端、S-UI面板等
 ##############################
 
-echo "===== VPS 全栈部署（最终版）v2.1 ====="
+echo "===== VPS 全栈部署（最终版）v2.2 ====="
 
 # -----------------------------
 # Cloudflare API 权限提示
@@ -35,6 +35,10 @@ export CF_Token
 VLESS_PORT=5000
 SUB_WEB_API_PORT=3001 # 你自己的聚合后端端口
 
+# 证书路径定义
+NGINX_SSL_DIR="/etc/nginx/ssl/$DOMAIN"
+ROOT_CERTS_DIR="/root/certs/$DOMAIN"
+
 # SubConverter 二进制下载链接
 SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
 
@@ -44,16 +48,39 @@ WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
 SUB_WEB_API_REPO="https://github.com/about300/sub-web-api.git"
 
 # -----------------------------
+# 证书同步函数
+# -----------------------------
+sync_certificates_to_root() {
+    echo "[证书同步] 将证书同步到 root 目录..."
+    mkdir -p "$ROOT_CERTS_DIR"
+    
+    # 复制证书文件
+    if [ -f "$NGINX_SSL_DIR/fullchain.pem" ]; then
+        cp "$NGINX_SSL_DIR/fullchain.pem" "$ROOT_CERTS_DIR/fullchain.pem"
+        cp "$NGINX_SSL_DIR/key.pem" "$ROOT_CERTS_DIR/key.pem"
+        cp "$NGINX_SSL_DIR/ca.cer" "$ROOT_CERTS_DIR/ca.cer" 2>/dev/null || true
+        
+        # 设置安全权限
+        chmod 600 "$ROOT_CERTS_DIR/key.pem"
+        chmod 644 "$ROOT_CERTS_DIR/fullchain.pem"
+        
+        echo "✅ 证书已同步到: $ROOT_CERTS_DIR"
+    else
+        echo "⚠️  源证书不存在，跳过同步"
+    fi
+}
+
+# -----------------------------
 # 步骤 1：更新系统与依赖
 # -----------------------------
-echo "[1/13] 更新系统与安装依赖"
+echo "[1/14] 更新系统与安装依赖"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 npm net-tools
 
 # -----------------------------
 # 步骤 2：防火墙配置
 # -----------------------------
-echo "[2/13] 配置防火墙"
+echo "[2/14] 配置防火墙"
 ufw allow 22
 ufw allow 80
 ufw allow 443
@@ -69,7 +96,7 @@ ufw --force enable
 # -----------------------------
 # 步骤 3：安装 acme.sh
 # -----------------------------
-echo "[3/13] 安装 acme.sh（DNS-01）"
+echo "[3/14] 安装 acme.sh（DNS-01）"
 if [ ! -d "$HOME/.acme.sh" ]; then
     curl https://get.acme.sh | sh
     source ~/.bashrc
@@ -77,31 +104,34 @@ else
     echo "[INFO] acme.sh 已安装，跳过"
 fi
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-mkdir -p /etc/nginx/ssl/$DOMAIN
+mkdir -p "$NGINX_SSL_DIR"
 
 # -----------------------------
 # 步骤 4：申请 SSL 证书
 # -----------------------------
-echo "[4/13] 申请或检查 SSL 证书"
-if [ ! -f "/etc/nginx/ssl/$DOMAIN/fullchain.pem" ]; then
+echo "[4/14] 申请或检查 SSL 证书"
+if [ ! -f "$NGINX_SSL_DIR/fullchain.pem" ]; then
     ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
 else
     echo "[INFO] SSL 证书已存在，跳过申请"
 fi
 
 # -----------------------------
-# 步骤 5：安装证书到 Nginx
+# 步骤 5：安装证书到 Nginx 并同步到 root
 # -----------------------------
-echo "[5/13] 安装证书到 Nginx"
+echo "[5/14] 安装证书到 Nginx 并同步到 root 目录"
 ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-    --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
-    --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
-    --reloadcmd "systemctl reload nginx"
+    --key-file "$NGINX_SSL_DIR/key.pem" \
+    --fullchain-file "$NGINX_SSL_DIR/fullchain.pem" \
+    --reloadcmd "systemctl reload nginx && sync_certificates_to_root"
+
+# 初始同步证书到 root 目录
+sync_certificates_to_root
 
 # -----------------------------
 # 步骤 6：安装 SubConverter 后端
 # -----------------------------
-echo "[6/13] 安装 SubConverter"
+echo "[6/14] 安装 SubConverter"
 mkdir -p /opt/subconverter
 if [ ! -f "/opt/subconverter/subconverter" ]; then
     wget -O /opt/subconverter/subconverter $SUBCONVERTER_BIN
@@ -130,7 +160,7 @@ systemctl restart subconverter
 # -----------------------------
 # 步骤 7：安装你自己的聚合后端 (sub-web-api)
 # -----------------------------
-echo "[7/13] 安装你自己的聚合后端 (sub-web-api)"
+echo "[7/14] 安装你自己的聚合后端 (sub-web-api)"
 if [ -d "/opt/sub-web-api" ]; then
     echo "[INFO] 检测到已存在的 sub-web-api，停止服务..."
     systemctl stop sub-web-api 2>/dev/null || true
@@ -182,7 +212,7 @@ fi
 # -----------------------------
 # 步骤 8：安装 Node.js（已安装 npm 可跳过）
 # -----------------------------
-echo "[8/13] 确保 Node.js 可用"
+echo "[8/14] 确保 Node.js 可用"
 if ! command -v node &> /dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt install -y nodejs
@@ -191,7 +221,7 @@ fi
 # -----------------------------
 # 步骤 9：构建 sub-web-modify 前端
 # -----------------------------
-echo "[9/13] 构建 sub-web-modify 前端"
+echo "[9/14] 构建 sub-web-modify 前端"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
@@ -206,7 +236,7 @@ npm run build
 # -----------------------------
 # 步骤 10：安装 S-UI 面板
 # -----------------------------
-echo "[10/13] 安装 S-UI 面板"
+echo "[10/14] 安装 S-UI 面板"
 if [ ! -d "/opt/s-ui" ]; then
     bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 fi
@@ -214,7 +244,7 @@ fi
 # -----------------------------
 # 步骤 11：Web 主页（自动更新机制）
 # -----------------------------
-echo "[11/13] 配置 Web 主页"
+echo "[11/14] 配置 Web 主页"
 rm -rf /opt/web-home
 mkdir -p /opt/web-home
 git clone $WEB_HOME_REPO /opt/web-home/tmp
@@ -224,7 +254,7 @@ rm -rf /opt/web-home/tmp
 # -----------------------------
 # 步骤 12：安装 AdGuard Home
 # -----------------------------
-echo "[12/13] 安装 AdGuard Home"
+echo "[12/14] 安装 AdGuard Home"
 if [ ! -d "/opt/AdGuardHome" ]; then
     curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
 fi
@@ -232,15 +262,15 @@ fi
 # -----------------------------
 # 步骤 13：配置 Nginx (关键：补充完整配置)
 # -----------------------------
-echo "[13/13] 配置 Nginx"
+echo "[13/14] 配置 Nginx"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name $DOMAIN;
 
-    ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
+    ssl_certificate     $NGINX_SSL_DIR/fullchain.pem;
+    ssl_certificate_key $NGINX_SSL_DIR/key.pem;
 
     # 主页
     root /opt/web-home/current;
@@ -350,8 +380,9 @@ nginx -t
 systemctl reload nginx
 
 # -----------------------------
-# 验证部署
+# 步骤 14：验证部署
 # -----------------------------
+echo "[14/14] 验证部署"
 verify_deployment() {
     echo ""
     echo "🔍 验证部署状态..."
@@ -380,7 +411,18 @@ verify_deployment() {
     done
     
     echo ""
-    echo "3. 快速HTTP访问测试 (可能需要几秒):"
+    echo "3. 检查证书文件:"
+    local cert_paths=("$NGINX_SSL_DIR/fullchain.pem" "$ROOT_CERTS_DIR/fullchain.pem")
+    for cert_path in "${cert_paths[@]}"; do
+        if [ -f "$cert_path" ]; then
+            echo "   ✅ $(basename "$cert_path") 存在 ($cert_path)"
+        else
+            echo "   ❌ $(basename "$cert_path") 不存在"
+        fi
+    done
+    
+    echo ""
+    echo "4. 快速HTTP访问测试 (可能需要几秒):"
     local endpoints=("/" "/subconvert/" "/subconvert/api/" "/sub/api/")
     for endpoint in "${endpoints[@]}"; do
         local status_code=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN$endpoint" --max-time 5 2>/dev/null || echo "000")
@@ -401,7 +443,7 @@ verify_deployment
 # -----------------------------
 echo ""
 echo "====================================="
-echo "🎉 VPS 全栈部署完成 v2.1"
+echo "🎉 VPS 全栈部署完成 v2.2"
 echo "====================================="
 echo ""
 echo "📋 重要访问地址:"
@@ -413,6 +455,10 @@ echo "  🔌 原始后端API:         https://$DOMAIN/sub/api/"
 echo "  🛡️  AdGuard Home:       https://$DOMAIN/adguard/"
 echo "  📊 S-UI面板(Web):       https://$DOMAIN/sui/"
 echo "  📊 S-UI面板(直连):      http://127.0.0.1:2095 或 http://服务器IP:2095"
+echo ""
+echo "🔐 证书路径:"
+echo "  • Nginx使用: $NGINX_SSL_DIR/"
+echo "  • 其他服务: $ROOT_CERTS_DIR/ (自动同步)"
 echo ""
 echo "🔧 S-UI 面板配置提示:"
 echo ""
@@ -453,11 +499,12 @@ echo "  4. 备份重要配置和证书"
 echo ""
 echo "🔗 相关路径:"
 echo "  • Nginx配置: /etc/nginx/sites-available/$DOMAIN"
-echo "  • SSL证书: /etc/nginx/ssl/$DOMAIN/"
+echo "  • SSL证书(Nginx): $NGINX_SSL_DIR/"
+echo "  • SSL证书(服务用): $ROOT_CERTS_DIR/ (自动同步)"
 echo "  • 前端文件: /opt/sub-web-modify/dist/"
 echo "  • 聚合后端: /opt/sub-web-api/"
 echo ""
 echo "====================================="
 echo "部署时间: $(date)"
-echo "脚本版本: v2.1"
+echo "脚本版本: v2.2"
 echo "====================================="

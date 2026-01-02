@@ -5,7 +5,7 @@ echo "===== VPS 全栈部署（最终版） ====="
 # -----------------------------
 # 步骤 0：预定义变量
 # -----------------------------
-read -rp "请输入您的域名 (例如：web.mycloudshare.org): " DOMAIN
+read -rp "请输入您的域名 (例如：example.domain): " DOMAIN
 read -rp "请输入 Cloudflare 邮箱: " CF_Email
 read -rp "请输入 Cloudflare API Token: " CF_Token
 export CF_Email

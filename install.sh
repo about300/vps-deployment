@@ -3,12 +3,12 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v2.2
+# Version: v2.3
 # Author: Auto-generated
 # Description: 部署完整的VPS服务栈，包括Sub-Web前端、聚合后端、S-UI面板等
 ##############################
 
-echo "===== VPS 全栈部署（最终版）v2.2 ====="
+echo "===== VPS 全栈部署（最终版）v2.3 ====="
 
 # -----------------------------
 # Cloudflare API 权限提示
@@ -239,6 +239,8 @@ npm run build
 echo "[10/14] 安装 S-UI 面板"
 if [ ! -d "/opt/s-ui" ]; then
     bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+else
+    echo "[INFO] S-UI 已安装，跳过"
 fi
 
 # -----------------------------
@@ -260,9 +262,9 @@ if [ ! -d "/opt/AdGuardHome" ]; then
 fi
 
 # -----------------------------
-# 步骤 13：配置 Nginx (关键：补充完整配置)
+# 步骤 13：配置 Nginx (关键：添加VLESS WebSocket反代)
 # -----------------------------
-echo "[13/14] 配置 Nginx"
+echo "[13/14] 配置 Nginx (添加VLESS WebSocket反代)"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
@@ -339,12 +341,36 @@ server {
         proxy_set_header Connection "upgrade";
     }
 
-    # VLESS 订阅
+    # VLESS 订阅链接
     location /vless/ {
         proxy_pass http://127.0.0.1:${VLESS_PORT}/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+
+    # VLESS WebSocket 协议反代 (关键：新增)
+    location /ws/ {
+        proxy_pass http://127.0.0.1:${VLESS_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # 重要：确保连接保持
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        
+        # 关闭缓冲
+        proxy_buffering off;
+        
+        # 增加缓冲区大小
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
     }
 
     # AdGuard Home 反代
@@ -401,7 +427,7 @@ verify_deployment() {
     
     echo ""
     echo "2. 检查端口监听:"
-    local ports=("80" "443" "25500" "${SUB_WEB_API_PORT}" "3000")
+    local ports=("80" "443" "25500" "${SUB_WEB_API_PORT}" "3000" "5000")
     for port in "${ports[@]}"; do
         if netstat -tln | grep -q ":$port "; then
             echo "   ✅ 端口 $port 已监听"
@@ -423,7 +449,7 @@ verify_deployment() {
     
     echo ""
     echo "4. 快速HTTP访问测试 (可能需要几秒):"
-    local endpoints=("/" "/subconvert/" "/subconvert/api/" "/sub/api/")
+    local endpoints=("/" "/subconvert/" "/subconvert/api/" "/sub/api/" "/ws/")
     for endpoint in "${endpoints[@]}"; do
         local status_code=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN$endpoint" --max-time 5 2>/dev/null || echo "000")
         if [[ "$status_code" =~ ^[2-3] ]]; then
@@ -443,7 +469,7 @@ verify_deployment
 # -----------------------------
 echo ""
 echo "====================================="
-echo "🎉 VPS 全栈部署完成 v2.2"
+echo "🎉 VPS 全栈部署完成 v2.3"
 echo "====================================="
 echo ""
 echo "📋 重要访问地址:"
@@ -455,36 +481,58 @@ echo "  🔌 原始后端API:         https://$DOMAIN/sub/api/"
 echo "  🛡️  AdGuard Home:       https://$DOMAIN/adguard/"
 echo "  📊 S-UI面板(Web):       https://$DOMAIN/sui/"
 echo "  📊 S-UI面板(直连):      http://127.0.0.1:2095 或 http://服务器IP:2095"
+echo "  📡 VLESS订阅:           https://$DOMAIN/vless/"
+echo "  📡 VLESS WebSocket:     wss://$DOMAIN/ws/"
 echo ""
 echo "🔐 证书路径:"
 echo "  • Nginx使用: $NGINX_SSL_DIR/"
 echo "  • 其他服务: $ROOT_CERTS_DIR/ (自动同步)"
 echo ""
-echo "🔧 S-UI 面板配置提示:"
+echo "🔧 S-UI 面板配置步骤:"
 echo ""
 echo "  1. 登录S-UI面板:"
 echo "     - 地址: http://127.0.0.1:2095 或 https://$DOMAIN/sui/"
 echo "     - 默认用户名/密码: admin/admin (请立即修改)"
 echo ""
-echo "  2. 添加VLESS节点时关键设置:"
-echo "     - 监听地址: 0.0.0.0 (监听所有网络接口)"
-echo "     - 监听端口: $VLESS_PORT (已在防火墙和Nginx中开放)"
-echo "     - 传输协议: TCP 或 Reality (推荐)"
-echo "     - 流控: xtls-rprx-vision (推荐)"
+echo "  2. 添加入站节点配置:"
+echo "     - 点击左侧菜单 '入站管理' -> '添加入站'"
+echo "     - 类型: VLESS"
+echo "     - 地址: 0.0.0.0"
+echo "     - 端口: $VLESS_PORT (5000)"
+echo "     - 协议: VLESS"
 echo ""
-echo "  3. V2ray/代理客户端设置:"
-echo "     - 服务器地址: $DOMAIN"
-echo "     - 端口: 443 (使用Nginx反代)"
-echo "     - 用户ID/UUID: 在S-UI面板中创建用户获取"
-echo "     - 传输协议: WebSocket 或 TCP (通过Nginx)"
-echo "     - 路径(如用WebSocket): /vless"
-echo "     - TLS: 启用 (SNI: $DOMAIN)"
+echo "  3. 配置传输设置 (关键步骤):"
+echo "     - 点击 '启用传输'"
+echo "     - 传输协议: WebSocket"
+echo "     - 路径: /ws/"
+echo "     - 其它选项保持默认"
 echo ""
-echo "  4. 订阅链接:"
-echo "     - 客户端订阅地址: https://$DOMAIN/vless/"
+echo "  4. 配置TLS设置:"
+echo "     - 点击 'TLS'"
+echo "     - TLS类型: tls"
+echo "     - 证书文件: /root/certs/$DOMAIN/fullchain.pem"
+echo "     - 私钥文件: /root/certs/$DOMAIN/key.pem"
+echo ""
+echo "  5. 创建用户:"
+echo "     - 点击 '用户管理'"
+echo "     - 添加新用户，获取UUID"
+echo "     - 保存所有设置"
+echo ""
+echo "  6. 客户端配置示例 (v2ray/clash):"
+echo "     - 服务器: $DOMAIN"
+echo "     - 端口: 443"
+echo "     - UUID: 在S-UI中创建的用户UUID"
+echo "     - 传输协议: WebSocket"
+echo "     - 路径: /ws/"
+echo "     - TLS: 启用"
+echo "     - SNI: $DOMAIN"
+echo ""
+echo "  7. 订阅链接获取:"
 echo "     - 在S-UI面板中生成订阅链接"
+echo "     - 或使用: https://$DOMAIN/vless/"
 echo ""
 echo "🛠️ 管理命令:"
+echo "  • 查看 S-UI 日志: journalctl -u s-ui -f"
 echo "  • 查看 sub-web-api 日志: journalctl -u sub-web-api -f"
 echo "  • 查看 subconverter 日志: journalctl -u subconverter -f"
 echo "  • 重启 Nginx: systemctl reload nginx"
@@ -503,8 +551,9 @@ echo "  • SSL证书(Nginx): $NGINX_SSL_DIR/"
 echo "  • SSL证书(服务用): $ROOT_CERTS_DIR/ (自动同步)"
 echo "  • 前端文件: /opt/sub-web-modify/dist/"
 echo "  • 聚合后端: /opt/sub-web-api/"
+echo "  • S-UI配置目录: /opt/s-ui/"
 echo ""
 echo "====================================="
 echo "部署时间: $(date)"
-echo "脚本版本: v2.2"
+echo "脚本版本: v2.3"
 echo "====================================="

@@ -3,19 +3,19 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v4.9 (修复Sub-Web前端版)
+# Version: v4.9.1 (修复Sub-Web前端资源加载)
 # Author: Auto-generated
-# Description: 修复SubConverter前端问题，确保所有功能正常
+# Description: 修复SubConverter前端CSS/JS/字体资源加载问题，确保彩色背景和3D动画正常显示
 ##############################
 
-echo "===== VPS 全栈部署（修复Sub-Web前端）v4.9 ====="
+echo "===== VPS 全栈部署（修复Sub-Web前端资源加载）v4.9.1 ====="
 
 # -----------------------------
 # 版本信息
 # -----------------------------
-SCRIPT_VERSION="4.9"
+SCRIPT_VERSION="4.9.1"
 echo "版本: v${SCRIPT_VERSION}"
-echo "更新: 修复SubConverter前端页面问题，确保订阅转换正常显示"
+echo "更新: 修复Sub-Web前端资源（CSS/JS/字体）加载问题，确保彩色背景和3D动画正常显示"
 echo ""
 
 # -----------------------------
@@ -390,9 +390,9 @@ rm -rf /tmp/web-home-repo
 echo "[INFO] 主页部署完成"
 
 # -----------------------------
-# 步骤 9：配置 Nginx（确保Sub-Web前端正常）
+# 步骤 9：配置 Nginx（修复Sub-Web前端资源加载）
 # -----------------------------
-echo "[9/12] 配置 Nginx"
+echo "[9/12] 配置 Nginx (v4.9.1修复资源加载)"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
@@ -409,18 +409,42 @@ server {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # 静态文件缓存
-    location ~* \\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)\$ {
+    # 主站点静态文件缓存（排除特定路径）
+    location ~* ^(?!/subconvert/)(?!/(js|css)/).*\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)\$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 
     # ========================
-    # Sub-Web 前端
+    # Sub-Web 资源重定向（关键修复）
+    # ========================
+    
+    # 处理 /js/* 请求（如 /js/jquery.min.js, /js/three.min.js）
+    location /js/ {
+        alias /opt/sub-web-modify/dist/js/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header Access-Control-Allow-Origin *;
+        try_files \$uri =404;
+    }
+
+    # 处理 /css/* 请求（如 /css/main.css）
+    location /css/ {
+        alias /opt/sub-web-modify/dist/css/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header Access-Control-Allow-Origin *;
+        try_files \$uri =404;
+    }
+
+    # ========================
+    # Sub-Web 前端应用
     # ========================
     location /subconvert/ {
         alias /opt/sub-web-modify/dist/;
         index index.html;
+        
+        # 精确的路径解析
         try_files \$uri \$uri/ /index.html;
         
         # 缓存静态资源
@@ -500,7 +524,7 @@ cd /tmp
 
 # 备份当前版本
 BACKUP_DIR="/opt/web-home/backup"
-mkdir -p "$BACKUP_DIR"
+mkdir-p "$BACKUP_DIR"
 BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
 if [ -d "/opt/web-home/current" ]; then
     cp -r /opt/web-home/current "$BACKUP_DIR/$BACKUP_NAME"
@@ -644,7 +668,23 @@ else
 fi
 
 echo ""
-echo "3. 访问地址:"
+echo "3. 检查SSL证书文件:"
+if [ -f "/etc/nginx/ssl/$DOMAIN/fullchain.pem" ]; then
+    echo "   ✅ SSL公钥证书存在"
+    echo "      路径: /etc/nginx/ssl/$DOMAIN/fullchain.pem"
+else
+    echo "   ⚠️  SSL公钥证书不存在"
+fi
+
+if [ -f "/etc/nginx/ssl/$DOMAIN/key.pem" ]; then
+    echo "   ✅ SSL私钥证书存在"
+    echo "      路径: /etc/nginx/ssl/$DOMAIN/key.pem"
+else
+    echo "   ⚠️  SSL私钥证书不存在"
+fi
+
+echo ""
+echo "4. 访问地址:"
 echo "   • 主页面: https://$DOMAIN"
 echo "   • 订阅转换前端: https://$DOMAIN/subconvert/"
 echo "   • 订阅转换API: https://$DOMAIN/sub/api/"
@@ -667,28 +707,46 @@ echo "  ⚙️  订阅转换API:  https://$DOMAIN/sub/api/"
 echo "  📊 S-UI面板:     https://$DOMAIN:2095"
 echo "  🛡️  AdGuard:     https://$DOMAIN:3000"
 echo ""
+echo "🔐 SSL证书路径:"
+echo "   • 公钥(fullchain.pem): /etc/nginx/ssl/$DOMAIN/fullchain.pem"
+echo "   • 私钥(key.pem): /etc/nginx/ssl/$DOMAIN/key.pem"
+echo ""
+echo "🎨 Sub-Web 3D背景特性:"
+echo "   • 动态粒子/线条动画"
+echo "   • 鼠标跟随交互效果"
+echo "   • 自动颜色渐变"
+echo "   • 响应式Canvas渲染"
+echo ""
+echo "📡 VLESS配置:"
+echo "   • 监听地址: 0.0.0.0"
+echo "   • 监听端口: $VLESS_PORT"
+echo "   • 域名: $DOMAIN"
+echo ""
 echo "🔧 订阅转换使用说明:"
 echo "  1. 访问 https://$DOMAIN/subconvert/"
 echo "  2. 在页面中输入订阅链接"
 echo "  3. 选择目标格式 (Clash, V2Ray, Quantumult X等)"
 echo "  4. 点击转换并复制结果"
 echo ""
-echo "⚙️  VLESS 配置:"
-echo "  • 域名: $DOMAIN"
-echo "  • 端口: $VLESS_PORT"
-echo "  • 在S-UI面板中配置入站节点"
+echo "⚙️  SubConverter配置:"
+echo "   • 监听地址: 0.0.0.0"
+echo "   • 监听端口: 25500 (仅本地访问)"
+echo "   • 配置文件: /opt/subconverter/subconverter.env"
 echo ""
 echo "🛠️ 管理命令:"
 echo "  • 服务状态: check-services.sh"
 echo "  • 更新主页: update-home"
 echo "  • SubConverter日志: journalctl -u subconverter -f"
 echo "  • S-UI日志: journalctl -u s-ui -f"
+echo "  • Nginx日志: tail -f /var/log/nginx/access.log"
+echo "  • 查看SSL证书: ls -la /etc/nginx/ssl/$DOMAIN/"
 echo ""
 echo "📁 重要目录:"
 echo "  • 主页目录: /opt/web-home/current/"
 echo "  • Sub-Web前端: /opt/sub-web-modify/dist/"
 echo "  • SubConverter: /opt/subconverter/"
-echo "  • SSL证书: /etc/nginx/ssl/$DOMAIN/"
+echo "  • SSL证书目录: /etc/nginx/ssl/$DOMAIN/"
+echo "  • Nginx配置: /etc/nginx/sites-available/$DOMAIN"
 echo ""
 echo "🔄 自动更新:"
 echo "  • 每天凌晨3点自动从GitHub更新主页"

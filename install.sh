@@ -3,7 +3,7 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v2.4
+# Version: v2.5
 # Author: Auto-generated
 # Description: 部署完整的VPS服务栈，包括Sub-Web前端、聚合后端、S-UI面板等
 ##############################
@@ -437,7 +437,7 @@ server {
 
     # S-UI 面板反代 - 修复：直接代理到S-UI的根路径
     location /sui/ {
-        proxy_pass http://127.0.0.1:2095/;
+        proxy_pass http://127.0.0.1:2095/sui;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -456,43 +456,6 @@ server {
         proxy_redirect http://127.0.0.1:2095/ https://\$host/sui/;
     }
 
-    # VLESS 订阅
-    location /vless/ {
-        proxy_pass http://127.0.0.1:${VLESS_PORT}/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        
-        # 增加超时时间
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-
-    # VLESS WebSocket 协议反代
-    location /ws/ {
-        proxy_pass http://127.0.0.1:${VLESS_PORT}/;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        
-        # 重要：确保连接保持
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-        
-        # 关闭缓冲
-        proxy_buffering off;
-        
-        # 增加缓冲区大小
-        proxy_buffer_size 128k;
-        proxy_buffers 4 256k;
-        proxy_busy_buffers_size 256k;
-    }
-}
 
 # HTTP 强制跳转 HTTPS
 server {

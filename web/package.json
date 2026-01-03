@@ -1,0 +1,18 @@
+{
+  "name": "vps-dashboard",
+  "version": "1.0.0",
+  "description": "VPS Dashboard - 全栈服务管理",
+  "main": "index.html",
+  "scripts": {
+    "build": "echo 'Building static site...'",
+    "start": "echo 'Static site - no server required'"
+  },
+  "keywords": ["vps", "dashboard", "subconverter", "s-ui"],
+  "author": "about300",
+  "license": "MIT",
+  "devDependencies": {
+    "autoprefixer": "^10.4.0",
+    "cssnano": "^5.0.0",
+    "postcss-cli": "^9.0.0"
+  }
+}

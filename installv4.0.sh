@@ -3,19 +3,19 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v4.0 (带自动更新功能)
+# Version: v4.2 (S-UI直接访问)
 # Author: Auto-generated
-# Description: 部署完整的VPS服务栈，包含自动更新功能
+# Description: 部署完整的VPS服务栈，S-UI直接访问
 ##############################
 
-echo "===== VPS 全栈部署（自动更新版）v4.0 ====="
+echo "===== VPS 全栈部署（S-UI直接访问版）v4.2 ====="
 
 # -----------------------------
 # 版本信息
 # -----------------------------
-SCRIPT_VERSION="4.0"
+SCRIPT_VERSION="4.2"
 echo "版本: v${SCRIPT_VERSION}"
-echo "更新: 添加Web主页自动更新功能"
+echo "更新: S-UI直接端口访问，不通过Nginx反代"
 echo ""
 
 # -----------------------------
@@ -77,7 +77,7 @@ WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
 # -----------------------------
 # 步骤 1：更新系统与依赖
 # -----------------------------
-echo "[1/14] 更新系统与安装依赖"
+echo "[1/16] 更新系统与安装依赖"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 npm net-tools
 
@@ -90,9 +90,9 @@ else
 fi
 
 # -----------------------------
-# 步骤 2：防火墙配置（开放VLESS端口）
+# 步骤 2：防火墙配置（开放所有必要端口）
 # -----------------------------
-echo "[2/14] 配置防火墙（开放VLESS端口: $VLESS_PORT）"
+echo "[2/16] 配置防火墙（开放VLESS端口: $VLESS_PORT，S-UI端口: 2095）"
 # 首先重置防火墙规则
 ufw --force reset
 
@@ -107,6 +107,9 @@ ufw allow 22
 ufw allow 80
 ufw allow 443
 
+# 允许S-UI面板端口（直接访问）
+ufw allow 2095
+
 # 允许AdGuard Home端口
 ufw allow 3000   # AdGuard Home Web界面
 ufw allow 8445   # AdGuard Home 管理端口1
@@ -115,10 +118,6 @@ ufw allow 8446   # AdGuard Home 管理端口2
 # 允许SubConverter端口（仅本地）
 ufw allow from 127.0.0.1 to any port 25500
 
-# 允许S-UI面板（仅本地）
-ufw allow from 127.0.0.1 to any port 2095
-ufw deny 2095  # 禁止外部直接访问
-
 # 开放VLESS端口（外部可访问）
 ufw allow ${VLESS_PORT}/tcp
 
@@ -126,10 +125,10 @@ ufw allow ${VLESS_PORT}/tcp
 echo "y" | ufw --force enable
 
 echo "[INFO] 防火墙配置完成："
-echo "  • 开放端口: 22(SSH), 80(HTTP), 443(HTTPS), 3000, 8445, 8446"
+echo "  • 开放端口: 22(SSH), 80(HTTP), 443(HTTPS), 2095(S-UI), 3000, 8445, 8446"
 echo "  • VLESS端口: ${VLESS_PORT} (外部可访问)"
-echo "  • 本地访问(127.0.0.1): 2095(S-UI), 25500(subconverter)"
-echo "  • 禁止外部访问: 2095(S-UI面板)"
+echo "  • 本地访问(127.0.0.1): 25500(subconverter)"
+echo "  • S-UI面板: 直接通过端口2095访问"
 echo ""
 
 # 显示防火墙状态
@@ -138,7 +137,7 @@ ufw status numbered
 # -----------------------------
 # 步骤 3：安装 acme.sh
 # -----------------------------
-echo "[3/14] 安装 acme.sh（DNS-01）"
+echo "[3/16] 安装 acme.sh（DNS-01）"
 if [ ! -d "$HOME/.acme.sh" ]; then
     curl https://get.acme.sh | sh
     source ~/.bashrc
@@ -151,7 +150,7 @@ mkdir -p /etc/nginx/ssl/$DOMAIN
 # -----------------------------
 # 步骤 4：申请 SSL 证书
 # -----------------------------
-echo "[4/14] 申请或检查 SSL 证书"
+echo "[4/16] 申请或检查 SSL 证书"
 if [ ! -f "/etc/nginx/ssl/$DOMAIN/fullchain.pem" ]; then
     ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
 else
@@ -161,7 +160,7 @@ fi
 # -----------------------------
 # 步骤 5：安装证书到 Nginx
 # -----------------------------
-echo "[5/14] 安装证书到 Nginx"
+echo "[5/16] 安装证书到 Nginx"
 ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
     --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
     --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
@@ -170,7 +169,7 @@ echo "[5/14] 安装证书到 Nginx"
 # -----------------------------
 # 步骤 6：安装 SubConverter 后端
 # -----------------------------
-echo "[6/14] 安装 SubConverter"
+echo "[6/16] 安装 SubConverter"
 mkdir -p /opt/subconverter
 if [ ! -f "/opt/subconverter/subconverter" ]; then
     wget -O /opt/subconverter/subconverter $SUBCONVERTER_BIN
@@ -218,7 +217,7 @@ systemctl restart subconverter
 # -----------------------------
 # 步骤 7：安装 Node.js
 # -----------------------------
-echo "[7/14] 确保 Node.js 可用"
+echo "[7/16] 确保 Node.js 可用"
 if ! command -v node &> /dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt install -y nodejs
@@ -227,7 +226,7 @@ fi
 # -----------------------------
 # 步骤 8：构建 sub-web-modify 前端
 # -----------------------------
-echo "[8/14] 构建 sub-web-modify 前端"
+echo "[8/16] 构建 sub-web-modify 前端"
 rm -rf /opt/sub-web-modify
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 cd /opt/sub-web-modify
@@ -249,102 +248,24 @@ elif [ -f "/opt/sub-web-modify/dist/config.template.js" ]; then
 fi
 
 # -----------------------------
-# 步骤 9：安装 S-UI 面板（修复安装问题）
+# 步骤 9：安装 S-UI 面板（完全使用默认安装）
 # -----------------------------
-echo "[9/14] 安装 S-UI 面板"
-if [ ! -d "/opt/s-ui" ]; then
-    echo "[INFO] 开始安装 S-UI 面板..."
-    # 下载安装脚本
-    wget -O /tmp/s-ui-install.sh https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh
-    chmod +x /tmp/s-ui-install.sh
-    
-    # 检查脚本内容
-    if grep -q "#!/bin/bash" /tmp/s-ui-install.sh; then
-        echo "[INFO] S-UI 安装脚本下载成功，开始安装..."
-        # 设置自动应答
-        echo -e "\n\n" | bash /tmp/s-ui-install.sh 2>/dev/null || {
-            echo "[WARN] S-UI 自动安装可能有警告，继续执行..."
-        }
-    else
-        echo "[ERROR] S-UI 安装脚本下载失败，尝试备用方法"
-        # 备用安装方法
-        curl -sSL https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh | bash
-    fi
-    
-    # 检查S-UI是否安装成功
-    if [ -d "/opt/s-ui" ]; then
-        echo "[INFO] S-UI 面板安装成功"
-        # 确保S-UI监听所有地址
-        if [ -f "/opt/s-ui/config.json" ]; then
-            echo "[INFO] S-UI 配置文件已找到，修复监听地址..."
-            # 修改配置文件，确保监听0.0.0.0
-            sed -i 's/"address": "127.0.0.1"/"address": "0.0.0.0"/g' /opt/s-ui/config.json 2>/dev/null || true
-            sed -i 's/"host": "127.0.0.1"/"host": "0.0.0.0"/g' /opt/s-ui/config.json 2>/dev/null || true
-            
-            # 检查是否修改成功
-            if grep -q '"address": "0.0.0.0"' /opt/s-ui/config.json; then
-                echo "[INFO] S-UI 监听地址已设置为 0.0.0.0"
-            else
-                echo "[WARN] 无法自动修改S-UI配置，可能需要手动修改"
-            fi
-        else
-            echo "[WARN] 未找到S-UI配置文件，尝试创建"
-            # 创建基本配置文件
-            mkdir -p /opt/s-ui
-            cat > /opt/s-ui/config.json <<'EOF'
-{
-  "address": "0.0.0.0",
-  "port": 2095,
-  "assets": "/opt/s-ui/assets",
-  "database": "/opt/s-ui/database.db",
-  "log": "/opt/s-ui/logs",
-  "secret": "sui-panel-secret-key-change-me",
-  "admin": {
-    "username": "admin",
-    "password": "admin"
-  }
-}
-EOF
-        fi
-    else
-        echo "[ERROR] S-UI 可能未安装成功，请检查"
-        echo "[INFO] 尝试手动安装: bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)"
-    fi
-fi
+echo "[9/16] 安装 S-UI 面板（默认交互式安装）"
+echo "[INFO] 开始安装 S-UI 面板..."
+echo "[INFO] 请按照提示完成S-UI安装过程..."
+echo ""
 
-# 重启S-UI服务确保配置生效
-echo "[INFO] 重启S-UI服务..."
-systemctl restart s-ui 2>/dev/null || {
-    echo "[WARN] S-UI 服务重启失败，尝试启动..."
-    systemctl start s-ui 2>/dev/null || true
-}
+# 运行原始安装脚本，保持完全交互
+bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
+
+echo "[INFO] S-UI 安装完成"
 
 # 检查S-UI服务状态
 sleep 3
 if systemctl is-active --quiet s-ui; then
     echo "[INFO] S-UI 服务正在运行"
 else
-    echo "[WARN] S-UI 服务未运行，尝试修复..."
-    # 创建systemd服务文件
-    cat >/etc/systemd/system/s-ui.service <<EOF
-[Unit]
-Description=S-UI Panel Service
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/s-ui
-ExecStart=/opt/s-ui/s-ui
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    systemctl daemon-reload
-    systemctl enable s-ui
+    echo "[WARN] S-UI 服务未运行，尝试启动..."
     systemctl start s-ui
     sleep 2
     
@@ -352,32 +273,26 @@ EOF
         echo "[INFO] S-UI 服务已成功启动"
     else
         echo "[ERROR] S-UI 服务启动失败"
-        echo "[INFO] 请手动检查: journalctl -u s-ui --no-pager -n 20"
+        echo "[INFO] 请手动检查: systemctl status s-ui"
     fi
 fi
 
 # -----------------------------
 # 步骤 10：验证S-UI访问
 # -----------------------------
-echo "[10/14] 验证S-UI访问设置"
+echo "[10/16] 验证S-UI访问设置"
 echo "[INFO] 检查S-UI服务状态..."
 if systemctl is-active --quiet s-ui; then
     echo "[INFO] S-UI 服务正在运行"
     
     # 验证防火墙规则
     echo "[INFO] 验证防火墙规则："
-    if ufw status | grep -q "2095.*127.0.0.1"; then
-        echo "  ✅ 2095端口允许本地访问"
+    if ufw status | grep -q "2095.*ALLOW"; then
+        echo "  ✅ 2095端口已允许外部访问"
     else
-        echo "  ❌ 2095端口未允许本地访问，修复中..."
-        ufw allow from 127.0.0.1 to any port 2095
-    fi
-    
-    if ufw status | grep -q "2095.*DENY"; then
-        echo "  ✅ 2095端口已禁止外部访问"
-    else
-        echo "  ❌ 2095端口未禁止外部访问，修复中..."
-        ufw deny 2095
+        echo "  ❌ 2095端口未允许外部访问，修复中..."
+        ufw allow 2095
+        ufw reload
     fi
 else
     echo "[WARN] S-UI 服务未运行，跳过访问限制配置"
@@ -386,7 +301,7 @@ fi
 # -----------------------------
 # 步骤 11：构建现代Web主页（使用npm）
 # -----------------------------
-echo "[11/14] 构建现代Web主页"
+echo "[11/16] 构建现代Web主页"
 rm -rf /opt/web-home
 mkdir -p /opt/web-home/current
 
@@ -474,8 +389,8 @@ if [ ! -f "/opt/web-home/current/index.html" ]; then
         <p>全栈服务管理平台</p>
         <div class="links">
             <a href="/subconvert/">订阅转换</a>
-            <a href="/sui/">S-UI面板</a>
-            <a href="http://localhost:3000">AdGuard Home</a>
+            <a href="http://localhost:2095" target="_blank">S-UI面板</a>
+            <a href="http://localhost:3000" target="_blank">AdGuard Home</a>
         </div>
     </div>
 </body>
@@ -496,7 +411,7 @@ ls -la /opt/web-home/current/
 # -----------------------------
 # 步骤 12：创建自动更新脚本
 # -----------------------------
-echo "[12/14] 创建自动更新脚本"
+echo "[12/16] 创建自动更新脚本"
 cat > /usr/local/bin/update-web-home.sh <<'EOF'
 #!/bin/bash
 # Web主页自动更新脚本
@@ -634,9 +549,6 @@ log "主页更新完成！"
 log "新版本文件数: $(find "$CURRENT_DIR" -type f | wc -l)"
 log "当前index.html大小: $(stat -c%s "$CURRENT_DIR/index.html") 字节"
 
-# 10. 发送通知（可选）
-# 可以在这里添加发送邮件或Telegram通知的代码
-
 exit 0
 EOF
 
@@ -650,7 +562,7 @@ echo "[INFO] 首次运行更新脚本..."
 # -----------------------------
 # 步骤 13：设置定时任务（每3天自动更新）
 # -----------------------------
-echo "[13/14] 设置定时任务（每3天自动更新）"
+echo "[13/16] 设置定时任务（每3天自动更新）"
 # 创建systemd定时服务
 cat > /etc/systemd/system/web-home-update.service <<EOF
 [Unit]
@@ -691,11 +603,29 @@ echo "[INFO] 更新日志: /var/log/web-home-update.log"
 echo "[INFO] 下次更新: $(systemctl list-timers web-home-update.timer --no-pager | grep web-home-update | head -1)"
 
 # -----------------------------
-# 步骤 14：安装 AdGuard Home
+# 步骤 14：安装 AdGuard Home（安全方式）
 # -----------------------------
-echo "[14/14] 安装 AdGuard Home"
-if [ ! -d "/opt/AdGuardHome" ]; then
-    curl -sSL https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh
+echo "[14/16] 安装 AdGuard Home（可选）"
+read -p "是否安装AdGuard Home？(y/n，默认n): " install_adguard
+if [[ $install_adguard =~ ^[Yy]$ ]]; then
+    echo "[INFO] 开始安装 AdGuard Home..."
+    
+    # 创建临时目录并切换到该目录
+    TEMP_DIR=$(mktemp -d)
+    cd "$TEMP_DIR"
+    
+    # 下载安装脚本
+    wget -q https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
+    chmod +x install.sh
+    
+    # 运行安装脚本
+    ./install.sh
+    
+    # 返回原目录
+    cd -
+    
+    # 清理临时目录
+    rm -rf "$TEMP_DIR"
     
     # 配置AdGuard Home使用端口3000
     if [ -f "/opt/AdGuardHome/AdGuardHome.yaml" ]; then
@@ -704,13 +634,20 @@ if [ ! -d "/opt/AdGuardHome" ]; then
         cp /opt/AdGuardHome/AdGuardHome.yaml /opt/AdGuardHome/AdGuardHome.yaml.backup
         # 修改绑定端口为3000
         sed -i 's/^bind_port: .*/bind_port: 3000/' /opt/AdGuardHome/AdGuardHome.yaml 2>/dev/null || true
+        
+        # 重启AdGuard Home使配置生效
+        systemctl restart AdGuardHome 2>/dev/null || true
     fi
+    
+    echo "[INFO] AdGuard Home 安装完成"
+else
+    echo "[INFO] 跳过AdGuard Home安装"
 fi
 
 # -----------------------------
-# 步骤 15：配置 Nginx（修复S-UI反代问题 - 重点修改）
+# 步骤 15：配置 Nginx（简化版，不包含S-UI反代）
 # -----------------------------
-echo "[15/15] 配置 Nginx（包含博客和主页支持）"
+echo "[15/16] 配置 Nginx"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
@@ -804,100 +741,6 @@ server {
             return 204;
         }
     }
-
-    # ========================
-    # S-UI 面板反代
-    # ========================
-    
-    # 1. 静态资源代理
-    location ~ ^/sui/static/(.*)$ {
-        proxy_pass http://127.0.0.1:2095/static/\$1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Prefix /sui;
-        
-        # 缓存静态资源
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-    
-    # 2. API接口代理
-    location ~ ^/sui/api/(.*)$ {
-        proxy_pass http://127.0.0.1:2095/api/\$1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Prefix /sui;
-        
-        # WebSocket 支持
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        # 增加超时时间
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-    
-    # 3. S-UI主页面代理（处理应用路由）
-    location /sui/ {
-        proxy_pass http://127.0.0.1:2095/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Prefix /sui;
-        
-        # WebSocket 支持
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        # 修改响应中的HTML，添加base路径
-        sub_filter 'href="/' 'href="/sui/';
-        sub_filter 'src="/' 'src="/sui/';
-        sub_filter 'action="/' 'action="/sui/';
-        sub_filter '"/static/' '"/sui/static/';
-        sub_filter '"/api/' '"/sui/api/';
-        sub_filter_once off;
-        
-        # 重写重定向
-        proxy_redirect / /sui/;
-        proxy_redirect /static/ /sui/static/;
-        proxy_redirect /api/ /sui/api/;
-        
-        # 增加超时时间
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-    
-    # 4. 处理/sui重定向到/sui/
-    location = /sui {
-        return 301 /sui/;
-    }
-    
-    # 5. 兼容/app路径（可选）
-    location /app/ {
-        proxy_pass http://127.0.0.1:2095/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-    
-    # 6. 处理其他S-UI相关路径
-    location ~ ^/(login|dashboard|inbounds|outbounds|settings|logs|users) {
-        return 301 /sui/;
-    }
 }
 
 # HTTP 强制跳转 HTTPS
@@ -926,62 +769,9 @@ nginx -t 2>&1 | grep -q "test is successful" && {
 }
 
 # -----------------------------
-# 创建修复S-UI配置的脚本
+# 步骤 16：创建管理脚本
 # -----------------------------
-cat > /usr/local/bin/fix-sui-proxy.sh <<'EOF'
-#!/bin/bash
-# 修复S-UI代理配置脚本
-# 用法: fix-sui-proxy.sh [domain]
-
-DOMAIN="${1:-$DOMAIN}"
-
-if [ -z "$DOMAIN" ]; then
-    echo "请提供域名参数"
-    echo "用法: fix-sui-proxy.sh example.com"
-    exit 1
-fi
-
-echo "[INFO] 检查S-UI服务状态..."
-if systemctl is-active --quiet s-ui; then
-    echo "✅ S-UI服务正在运行"
-else
-    echo "❌ S-UI服务未运行，尝试启动..."
-    systemctl start s-ui
-    sleep 3
-    if systemctl is-active --quiet s-ui; then
-        echo "✅ S-UI服务已启动"
-    else
-        echo "❌ S-UI服务启动失败"
-        journalctl -u s-ui --no-pager -n 20
-    fi
-fi
-
-echo "[INFO] 检查Nginx配置..."
-nginx -t 2>&1 | grep -q "test is successful" && {
-    echo "✅ Nginx配置正常"
-    systemctl reload nginx
-    echo "✅ Nginx已重载"
-} || {
-    echo "❌ Nginx配置有错误"
-    nginx -t
-}
-
-echo "[INFO] 测试访问..."
-echo "1. 测试直接访问S-UI:"
-curl -s -o /dev/null -w "HTTP状态码: %{http_code}\n" http://127.0.0.1:2095/
-
-echo "2. 测试反向代理访问:"
-curl -s -o /dev/null -w "HTTP状态码: %{http_code}\n" https://$DOMAIN/sui/
-
-echo ""
-echo "🔧 访问地址:"
-echo "  • https://$DOMAIN/sui/  (主路径)"
-echo "  • https://$DOMAIN/app/  (兼容路径)"
-echo "  • http://127.0.0.1:2095/  (直接访问)"
-EOF
-
-chmod +x /usr/local/bin/fix-sui-proxy.sh
-
+echo "[16/16] 创建管理脚本"
 # 创建手动更新命令别名
 cat > /usr/local/bin/update-home <<'EOF'
 #!/bin/bash
@@ -989,6 +779,43 @@ echo "开始手动更新Web主页..."
 /usr/local/bin/update-web-home.sh
 EOF
 chmod +x /usr/local/bin/update-home
+
+# 创建服务状态检查脚本
+cat > /usr/local/bin/check-services <<'EOF'
+#!/bin/bash
+echo "=== 服务状态检查 ==="
+echo ""
+echo "1. Nginx 状态:"
+systemctl is-active --quiet nginx && echo "   ✅ 运行正常" || echo "   ❌ 未运行"
+
+echo ""
+echo "2. SubConverter 状态:"
+systemctl is-active --quiet subconverter && echo "   ✅ 运行正常" || echo "   ❌ 未运行"
+
+echo ""
+echo "3. S-UI 状态:"
+systemctl is-active --quiet s-ui && echo "   ✅ 运行正常" || echo "   ❌ 未运行"
+
+echo ""
+echo "4. 端口监听状态:"
+echo "   - 443 (HTTPS):"
+netstat -tlnp | grep -q ":443 " && echo "     ✅ 正在监听" || echo "     ❌ 未监听"
+echo "   - 2095 (S-UI):"
+netstat -tlnp | grep -q ":2095 " && echo "     ✅ 正在监听" || echo "     ❌ 未监听"
+echo "   - 25500 (SubConverter):"
+netstat -tlnp | grep -q ":25500 " && echo "     ✅ 正在监听" || echo "     ❌ 未监听"
+
+echo ""
+echo "=== 访问地址 ==="
+echo "  • 主页面: https://your-domain.com"
+echo "  • S-UI面板: http://your-domain.com:2095"
+echo "  • Sub-Web: https://your-domain.com/subconvert/"
+echo "  • AdGuard Home: http://your-domain.com:3000"
+EOF
+chmod +x /usr/local/bin/check-services
+
+# 替换脚本中的域名
+sed -i "s/your-domain.com/$DOMAIN/g" /usr/local/bin/check-services
 
 # -----------------------------
 # VLESS 端口验证
@@ -1003,10 +830,8 @@ echo ""
 echo "在 S-UI 面板中配置 VLESS 入站节点："
 echo ""
 echo "1. 登录 S-UI 面板："
-echo "   - 通过域名: https://$DOMAIN/sui/"
+echo "   - 通过域名: http://$DOMAIN:2095/"
 echo "   - 或直接访问: http://服务器IP:2095/"
-echo "   - 通过SSH隧道: ssh -L 8080:127.0.0.1:2095 root@$DOMAIN"
-echo "     然后访问: http://localhost:8080/"
 echo ""
 echo "2. 添加入站节点："
 echo "   点击左侧菜单 '入站管理' -> '添加入站'"
@@ -1057,7 +882,7 @@ verify_deployment() {
     echo ""
     echo "3. 检查防火墙状态:"
     echo "   - 开放端口 (外部访问):"
-    local external_ports=("22" "80" "443" "3000" "8445" "8446" "${VLESS_PORT}")
+    local external_ports=("22" "80" "443" "2095" "3000" "8445" "8446" "${VLESS_PORT}")
     for port in "${external_ports[@]}"; do
         if ufw status | grep -q "$port.*ALLOW"; then
             echo "     ✅ 端口 $port 已开放"
@@ -1067,7 +892,7 @@ verify_deployment() {
     done
     
     echo "   - 本地访问端口 (仅127.0.0.1):"
-    local local_ports=("2095" "25500")
+    local local_ports=("25500")
     for port in "${local_ports[@]}"; do
         if ufw status | grep -q "$port.*127.0.0.1"; then
             echo "     ✅ 端口 $port 允许本地访问"
@@ -1093,13 +918,13 @@ verify_deployment() {
         echo "     ⚠️  Sub-Web前端 可能有问题"
     fi
     
-    echo "   - S-UI面板反代: curl -I https://$DOMAIN/sui/..."
-    SUI_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://$DOMAIN/sui/ --max-time 10)
+    echo "   - S-UI直接访问: curl -I http://$DOMAIN:2095/..."
+    SUI_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$DOMAIN:2095/ --max-time 10)
     if echo "$SUI_STATUS" | grep -q "200\|301\|302"; then
-        echo "     ✅ S-UI面板反代 访问正常 (HTTP状态码: $SUI_STATUS)"
+        echo "     ✅ S-UI直接访问 访问正常 (HTTP状态码: $SUI_STATUS)"
     else
-        echo "     ⚠️  S-UI面板反代 可能有问题 (HTTP状态码: $SUI_STATUS)"
-        echo "     尝试直接访问S-UI: curl -I http://127.0.0.1:2095/"
+        echo "     ⚠️  S-UI直接访问 可能有问题 (HTTP状态码: $SUI_STATUS)"
+        echo "     尝试本地访问S-UI: curl -I http://127.0.0.1:2095/"
     fi
     
     echo ""
@@ -1154,10 +979,10 @@ verify_deployment() {
     
     echo ""
     echo "9. 管理命令检查:"
-    echo "   ✅ 修复脚本: /usr/local/bin/fix-sui-proxy.sh"
+    echo "   ✅ 服务状态检查: check-services"
     echo "   ✅ 自动更新: /usr/local/bin/update-web-home.sh"
     echo "   ✅ 手动更新: update-home"
-    echo "   📝 用法: fix-sui-proxy.sh $DOMAIN"
+    echo "   📝 查看防火墙: ufw status"
 }
 
 # 执行验证
@@ -1177,15 +1002,11 @@ echo ""
 echo "  🌐 主页面:              https://$DOMAIN"
 echo "  🔧 Sub-Web前端:         https://$DOMAIN/subconvert/"
 echo "  ⚙️  原始后端API:         https://$DOMAIN/sub/api/"
-echo "  📊 S-UI面板(通过域名):  https://$DOMAIN/sui/"
+echo "  📊 S-UI面板:            http://$DOMAIN:2095/"
 echo "  📊 S-UI面板(直接访问):  http://服务器IP:2095/"
-echo "  📊 S-UI面板(SSH隧道):  先运行: ssh -L 8080:127.0.0.1:2095 root@$DOMAIN"
-echo "                          然后访问: http://localhost:8080/"
 echo ""
 echo "  🛡️  AdGuard Home:"
 echo "     - Web界面:          http://$DOMAIN:3000/"
-echo "     - 管理端口1:        https://$DOMAIN:8445/"
-echo "     - 管理端口2:        http://$DOMAIN:8446/"
 echo ""
 echo "🔐 证书路径:"
 echo "  • 证书文件: /etc/nginx/ssl/$DOMAIN/fullchain.pem"
@@ -1209,13 +1030,13 @@ echo "  • 更新频率: 每3天自动更新"
 echo "  • 手动更新: 运行 'update-home' 命令"
 echo ""
 echo "🛠️ 管理命令:"
+echo "  • 查看服务状态: check-services"
 echo "  • 查看 S-UI 日志: journalctl -u s-ui -f"
 echo "  • 查看 subconverter 日志: journalctl -u subconverter -f"
 echo "  • 重启 Nginx: systemctl reload nginx"
 echo "  • 验证Nginx配置: nginx -t"
 echo "  • 防火墙状态: ufw status verbose"
 echo "  • 端口监听状态: netstat -tlnp"
-echo "  • 修复S-UI代理: fix-sui-proxy.sh $DOMAIN"
 echo "  • 手动更新主页: update-home"
 echo ""
 echo "📊 自动更新状态:"
@@ -1224,35 +1045,35 @@ echo "  • 下次更新: systemctl list-timers web-home-update.timer"
 echo "  • 查看日志: tail -f /var/log/web-home-update.log"
 echo ""
 echo "🔒 安全配置确认:"
-echo "  ✅ 2095端口允许本地访问 (支持SSH隧道)"
-echo "  ✅ 2095端口禁止外部直接访问"
+echo "  ✅ 2095端口已允许外部访问"
 echo "  ✅ VLESS端口(${VLESS_PORT})已开放"
 echo "  ✅ 自动更新系统已配置"
+echo "  ⚠️  S-UI使用HTTP访问，建议配置HTTPS"
 echo ""
 echo "⚠️  重要提醒:"
 echo "  1. 立即登录S-UI修改默认密码"
 echo "  2. 在S-UI中配置VLESS入站节点，使用端口 ${VLESS_PORT}"
-echo "  3. S-UI反代路径: https://$DOMAIN/sui/"
-echo "  4. 如果反代有问题，可直接访问: http://服务器IP:2095/"
-echo "  5. 使用修复脚本: fix-sui-proxy.sh $DOMAIN"
-echo "  6. Web主页每3天自动从GitHub更新"
-echo "  7. 如需立即更新，运行: update-home"
-echo "  8. 定期更新系统和软件"
-echo "  9. 备份证书文件: /etc/nginx/ssl/$DOMAIN/"
+echo "  3. S-UI访问地址: http://$DOMAIN:2095/"
+echo "  4. Web主页每3天自动从GitHub更新"
+echo "  5. 如需立即更新，运行: update-home"
+echo "  6. 定期更新系统和软件"
+echo "  7. 备份证书文件: /etc/nginx/ssl/$DOMAIN/"
+echo "  8. 建议为S-UI配置HTTPS访问"
 echo ""
 echo "====================================="
-echo "脚本版本: v${SCRIPT_VERSION} (带自动更新)"
+echo "脚本版本: v${SCRIPT_VERSION} (S-UI直接访问)"
 echo "部署时间: $(date)"
 echo "====================================="
 
 # 最后提示
 echo ""
-echo "🔧 快速修复命令（如果访问有问题）:"
-echo "  sudo /usr/local/bin/fix-sui-proxy.sh $DOMAIN"
-echo ""
 echo "🔄 手动更新主页:"
 echo "  sudo update-home"
 echo ""
+echo "🔍 检查服务状态:"
+echo "  sudo check-services"
+echo ""
 echo "🌐 访问测试:"
-echo "  curl -I https://$DOMAIN/sui/"
+echo "  curl -I http://$DOMAIN:2095/"
+echo "  curl -I https://$DOMAIN/subconvert/"
 echo ""

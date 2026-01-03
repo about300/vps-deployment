@@ -20,7 +20,7 @@
             <div class="nav-menu">
                 <a href="/" class="nav-link active">首页</a>
                 <a href="/subconvert/" class="nav-link">订阅转换</a>
-                <a href="https://${DOMAIN}:2095" class="nav-link" target="_blank">S-UI面板</a>
+                <a href="https://${DOMAIN}:2095/app" class="nav-link" target="_blank">S-UI面板</a>
                 <a href="#services" class="nav-link">服务状态</a>
                 <a href="https://github.com/about300" class="nav-link" target="_blank">
                     <i class="fab fa-github"></i> GitHub
@@ -74,7 +74,7 @@
                     </div>
                 </a>
 
-                <a href="https://${DOMAIN}:2095" target="_blank" class="tool-card">
+                <a href="https://${DOMAIN}:2095/app" target="_blank" class="tool-card">
                     <div class="tool-icon">
                         <i class="fas fa-tachometer-alt"></i>
                     </div>
@@ -198,7 +198,7 @@
                     <h3 class="footer-title">快速链接</h3>
                     <ul class="footer-links">
                         <li><a href="/subconvert/">订阅转换</a></li>
-                        <li><a href="https://${DOMAIN}:2095" target="_blank">S-UI 面板</a></li>
+                        <li><a href="https://${DOMAIN}:2095/app" target="_blank">S-UI 面板</a></li>
                         <li><a href="https://${DOMAIN}:3000" target="_blank">AdGuard Home</a></li>
                         <li><a href="https://github.com/about300" target="_blank">GitHub</a></li>
                     </ul>
@@ -446,7 +446,7 @@ VPS-${protocol} = ${protocol}, ${domain}, ${port}, username=your-username, passw
                 },
                 { 
                     name: 'S-UI 面板', 
-                    url: window.location.origin + ':2095', 
+                    url: window.location.origin + ':2095/app', 
                     icon: 'fas fa-tachometer-alt',
                     details: '节点管理和流量监控',
                     ports: '2095'
@@ -524,7 +524,7 @@ VPS-${protocol} = ${protocol}, ${domain}, ${port}, username=your-username, passw
                 
                 const searchData = [
                     { title: '订阅转换', description: '转换各种订阅格式', url: '/subconvert/', tags: ['工具', '转换'] },
-                    { title: 'S-UI面板', description: '节点管理和流量监控', url: window.location.origin + ':2095', tags: ['管理', '面板'] },
+                    { title: 'S-UI面板', description: '节点管理和流量监控', url: window.location.origin + ':2095/app', tags: ['管理', '面板'] },
                     { title: 'AdGuard Home', description: '网络广告拦截', url: window.location.origin + ':3000', tags: ['安全', 'DNS'] }
                 ];
                 

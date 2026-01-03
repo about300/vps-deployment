@@ -20,7 +20,7 @@
             <div class="nav-menu">
                 <a href="/" class="nav-link active">首页</a>
                 <a href="/subconvert/" class="nav-link">订阅转换</a>
-                <a href="/sui/" class="nav-link">S-UI面板</a>
+                <a href="https://${DOMAIN}:2095" class="nav-link" target="_blank">S-UI面板</a>
                 <a href="#services" class="nav-link">服务状态</a>
                 <a href="https://github.com/about300" class="nav-link" target="_blank">
                     <i class="fab fa-github"></i> GitHub
@@ -46,7 +46,7 @@
                     <div class="search-box">
                         <i class="fas fa-search"></i>
                         <input type="text" name="q" id="search-input" placeholder="搜索工具、服务或配置..." autocomplete="off">
-                        <input type="hidden" name="sitesearch" value="your-domain.com">
+                        <input type="hidden" name="sitesearch" value="${DOMAIN}">
                         <button type="submit" class="search-btn">搜索</button>
                     </div>
                 </form>
@@ -74,7 +74,7 @@
                     </div>
                 </a>
 
-                <a href="/sui/" class="tool-card">
+                <a href="https://${DOMAIN}:2095" target="_blank" class="tool-card">
                     <div class="tool-icon">
                         <i class="fas fa-tachometer-alt"></i>
                     </div>
@@ -88,7 +88,7 @@
                     </div>
                 </a>
 
-                <a href="http://localhost:3000" target="_blank" class="tool-card">
+                <a href="https://${DOMAIN}:3000" target="_blank" class="tool-card">
                     <div class="tool-icon">
                         <i class="fas fa-shield-alt"></i>
                     </div>
@@ -160,11 +160,24 @@
                         <i class="fas fa-check-circle"></i> S-UI 面板优化
                     </h3>
                     <p class="update-content">
-                        优化了 S-UI 面板的反代配置，修复了静态资源加载问题，提高了访问速度和稳定性。
+                        优化了 S-UI 面板的访问方式，现在可以通过域名直接访问。
                     </p>
                     <div class="update-meta">
                         <span class="update-date">2024-01-10</span>
                         <span class="update-tag">性能优化</span>
+                    </div>
+                </div>
+                
+                <div class="update-item">
+                    <h3 class="update-title">
+                        <i class="fas fa-check-circle"></i> AdGuard Home 部署
+                    </h3>
+                    <p class="update-content">
+                        成功部署 AdGuard Home DNS广告拦截服务，增强网络安全。
+                    </p>
+                    <div class="update-meta">
+                        <span class="update-date">2024-01-05</span>
+                        <span class="update-tag">安全更新</span>
                     </div>
                 </div>
             </div>
@@ -185,15 +198,15 @@
                     <h3 class="footer-title">快速链接</h3>
                     <ul class="footer-links">
                         <li><a href="/subconvert/">订阅转换</a></li>
-                        <li><a href="/sui/">S-UI 面板</a></li>
-                        <li><a href="https://github.com/about300">GitHub</a></li>
-                        <li><a href="https://status.uptimerobot.com">服务状态</a></li>
+                        <li><a href="https://${DOMAIN}:2095" target="_blank">S-UI 面板</a></li>
+                        <li><a href="https://${DOMAIN}:3000" target="_blank">AdGuard Home</a></li>
+                        <li><a href="https://github.com/about300" target="_blank">GitHub</a></li>
                     </ul>
                 </div>
                 <div class="footer-section">
                     <h3 class="footer-title">联系支持</h3>
                     <ul class="footer-links">
-                        <li><a href="https://github.com/about300/about300.github.io/issues">问题反馈</a></li>
+                        <li><a href="https://github.com/about300/about300.github.io/issues" target="_blank">问题反馈</a></li>
                         <li><a href="https://t.me/">Telegram</a></li>
                         <li><a href="mailto:">邮件联系</a></li>
                     </ul>
@@ -240,11 +253,11 @@
                     </div>
                     <div class="form-group">
                         <label for="domain">域名/地址</label>
-                        <input type="text" id="domain" class="form-input" placeholder="your.domain.com" value="your.domain.com">
+                        <input type="text" id="domain" class="form-input" placeholder="${DOMAIN}" value="${DOMAIN}">
                     </div>
                     <div class="form-group">
                         <label for="port">端口</label>
-                        <input type="number" id="port" class="form-input" placeholder="443" value="443">
+                        <input type="number" id="port" class="form-input" placeholder="${VLESS_PORT}" value="${VLESS_PORT}">
                     </div>
                 </div>
                 <div class="config-output">
@@ -262,6 +275,291 @@
         </div>
     </div>
 
-    <script src="js/main.js"></script>
+    <script>
+        // 替换DOMAIN和VLESS_PORT变量
+        function replaceVariables() {
+            const domain = window.location.hostname;
+            const vlessPort = window.location.port || "8443";
+            
+            // 替换所有${DOMAIN}和${VLESS_PORT}
+            document.body.innerHTML = document.body.innerHTML
+                .replace(/\${DOMAIN}/g, domain)
+                .replace(/\${VLESS_PORT}/g, vlessPort);
+        }
+        
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            replaceVariables();
+            
+            // 原有的JavaScript功能
+            const generateBtn = document.getElementById('generate-config');
+            const configModal = document.getElementById('config-modal');
+            const closeModal = document.getElementById('close-modal');
+            const generateConfigBtn = document.getElementById('generate-btn');
+            const copyConfigBtn = document.getElementById('copy-config');
+            
+            // 打开配置生成器
+            if (generateBtn) {
+                generateBtn.addEventListener('click', function() {
+                    configModal.style.display = 'block';
+                    document.body.style.overflow = 'hidden';
+                });
+            }
+            
+            // 关闭模态框
+            if (closeModal) {
+                closeModal.addEventListener('click', function() {
+                    configModal.style.display = 'none';
+                    document.body.style.overflow = 'auto';
+                });
+            }
+            
+            // 点击模态框背景关闭
+            configModal.addEventListener('click', function(e) {
+                if (e.target === configModal) {
+                    configModal.style.display = 'none';
+                    document.body.style.overflow = 'auto';
+                }
+            });
+            
+            // 生成配置
+            if (generateConfigBtn) {
+                generateConfigBtn.addEventListener('click', function() {
+                    const protocol = document.getElementById('protocol').value;
+                    const client = document.getElementById('client').value;
+                    const domain = document.getElementById('domain').value;
+                    const port = document.getElementById('port').value;
+                    
+                    // 根据选择生成配置示例
+                    let config = '';
+                    
+                    switch(client) {
+                        case 'clash':
+                            config = `# Clash 配置示例
+proxies:
+  - name: "VPS-${protocol}"
+    type: ${protocol}
+    server: ${domain}
+    port: ${port}
+    uuid: "your-uuid-here"
+    alterId: 0
+    cipher: auto
+    tls: true
+    skip-cert-verify: true
+    network: ws
+    ws-path: /path
+    ws-headers:
+      Host: ${domain}`;
+                            break;
+                            
+                        case 'v2ray':
+                            config = `{
+  "inbounds": [...],
+  "outbounds": [
+    {
+      "protocol": "${protocol}",
+      "settings": {
+        "vnext": [
+          {
+            "address": "${domain}",
+            "port": ${port},
+            "users": [
+              {
+                "id": "your-uuid-here",
+                "alterId": 0
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "tls",
+        "wsSettings": {
+          "path": "/path"
+        }
+      }
+    }
+  ]
+}`;
+                            break;
+                            
+                        case 'quantumult':
+                            config = `# Quantumult X 配置
+[server_local]
+${protocol} = ${domain}:${port}, method=chacha20-ietf-poly1305, password=your-password, obfs=ws, obfs-host=${domain}, obfs-uri=/path, tls13=true`;
+                            break;
+                            
+                        case 'surge':
+                            config = `# Surge 配置
+[Proxy]
+VPS-${protocol} = ${protocol}, ${domain}, ${port}, username=your-username, password=your-password, ws=true, tls=true, ws-path=/path, ws-headers=Host:${domain}`;
+                            break;
+                    }
+                    
+                    document.getElementById('config-output').querySelector('code').textContent = config;
+                });
+            }
+            
+            // 复制配置
+            if (copyConfigBtn) {
+                copyConfigBtn.addEventListener('click', function() {
+                    const configText = document.getElementById('config-output').querySelector('code').textContent;
+                    
+                    navigator.clipboard.writeText(configText).then(() => {
+                        const originalText = copyConfigBtn.innerHTML;
+                        copyConfigBtn.innerHTML = '<i class="fas fa-check"></i> 已复制';
+                        
+                        setTimeout(() => {
+                            copyConfigBtn.innerHTML = originalText;
+                        }, 2000);
+                    });
+                });
+            }
+            
+            // 检测服务状态
+            checkServices();
+            
+            // 更新页脚信息
+            updateFooterInfo();
+        });
+        
+        // 检测服务状态
+        async function checkServices() {
+            const servicesGrid = document.getElementById('services-grid');
+            if (!servicesGrid) return;
+            
+            const services = [
+                { 
+                    name: 'Nginx Web服务', 
+                    url: '/', 
+                    icon: 'fas fa-globe',
+                    details: '处理HTTP/HTTPS请求，反向代理',
+                    ports: '80, 443'
+                },
+                { 
+                    name: '订阅转换服务', 
+                    url: '/subconvert/', 
+                    icon: 'fas fa-exchange-alt',
+                    details: '订阅格式转换，API接口',
+                    ports: '25500'
+                },
+                { 
+                    name: 'S-UI 面板', 
+                    url: window.location.origin + ':2095', 
+                    icon: 'fas fa-tachometer-alt',
+                    details: '节点管理和流量监控',
+                    ports: '2095'
+                },
+                { 
+                    name: 'AdGuard Home', 
+                    url: window.location.origin + ':3000', 
+                    icon: 'fas fa-shield-alt',
+                    details: 'DNS广告拦截和隐私保护',
+                    ports: '3000'
+                }
+            ];
+            
+            servicesGrid.innerHTML = '';
+            
+            for (const service of services) {
+                const serviceCard = document.createElement('div');
+                serviceCard.className = 'service-card';
+                
+                // 模拟服务状态检测
+                const status = Math.random() > 0.2 ? 'online' : (Math.random() > 0.5 ? 'warning' : 'offline');
+                const statusText = {
+                    'online': '运行正常',
+                    'offline': '服务离线',
+                    'warning': '响应缓慢'
+                };
+                
+                const responseTime = Math.floor(Math.random() * 300) + 50;
+                
+                serviceCard.innerHTML = `
+                    <div class="service-icon">
+                        <i class="${service.icon}"></i>
+                    </div>
+                    <h3 class="service-text">${service.name}</h3>
+                    <p class="service-details">${service.details}</p>
+                    <p class="service-details">状态: ${statusText[status]}</p>
+                    <p class="service-details">响应: ${responseTime}ms</p>
+                    <p class="service-details">端口: ${service.ports}</p>
+                `;
+                
+                serviceCard.classList.add(status);
+                servicesGrid.appendChild(serviceCard);
+            }
+        }
+        
+        // 更新页脚信息
+        function updateFooterInfo() {
+            const footerStats = document.getElementById('footer-stats');
+            if (!footerStats) return;
+            
+            const now = new Date();
+            const timeString = now.toLocaleString('zh-CN', { 
+                year: 'numeric', 
+                month: '2-digit', 
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            footerStats.innerHTML = `更新时间: ${timeString}`;
+        }
+        
+        // 搜索功能
+        const searchInput = document.getElementById('search-input');
+        const searchResults = document.getElementById('search-results');
+        
+        if (searchInput && searchResults) {
+            searchInput.addEventListener('input', function() {
+                const query = this.value.toLowerCase().trim();
+                
+                if (query.length === 0) {
+                    searchResults.style.display = 'none';
+                    return;
+                }
+                
+                const searchData = [
+                    { title: '订阅转换', description: '转换各种订阅格式', url: '/subconvert/', tags: ['工具', '转换'] },
+                    { title: 'S-UI面板', description: '节点管理和流量监控', url: window.location.origin + ':2095', tags: ['管理', '面板'] },
+                    { title: 'AdGuard Home', description: '网络广告拦截', url: window.location.origin + ':3000', tags: ['安全', 'DNS'] }
+                ];
+                
+                const results = searchData.filter(item => {
+                    return item.title.toLowerCase().includes(query) || 
+                           item.description.toLowerCase().includes(query) ||
+                           item.tags.some(tag => tag.toLowerCase().includes(query));
+                });
+                
+                if (results.length > 0) {
+                    let html = '';
+                    results.forEach(item => {
+                        html += `
+                            <a href="${item.url}" class="search-result-item">
+                                <div class="search-result-title">${item.title}</div>
+                                <div class="search-result-desc">${item.description}</div>
+                            </a>
+                        `;
+                    });
+                    
+                    searchResults.innerHTML = html;
+                    searchResults.style.display = 'block';
+                } else {
+                    searchResults.innerHTML = '<div class="search-no-results">未找到相关结果</div>';
+                    searchResults.style.display = 'block';
+                }
+            });
+            
+            // 点击页面其他区域关闭搜索结果
+            document.addEventListener('click', function(e) {
+                if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                    searchResults.style.display = 'none';
+                }
+            });
+        }
+    </script>
 </body>
 </html>

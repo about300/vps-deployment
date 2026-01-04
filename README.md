@@ -12,7 +12,7 @@
 在全新的 VPS 上执行以下命令：
 
     ```bash
-    bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/installv4.0.sh)
+    bash <(curl -sL https://raw.githubusercontent.com/about300/vps-deployment/main/install.sh)
 
 
 

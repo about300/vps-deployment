@@ -325,65 +325,65 @@ echo "[INFO] 主页部署完成"
 # -----------------------------
 echo "[9/12] 配置 Nginx（简化稳定配置）"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
+cat > /etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name $DOMAIN;
 
-    # 动态证书路径
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    # ========================
-    # 主站点配置
-    # ========================
     root /opt/web-home/current;
     index index.html;
-    
+
+    # ========================
+    # 主站点
+    # ========================
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
     # 主站静态文件缓存
-    location ~* \\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)\$ {
+    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 
     # ========================
-    # Sub-Web 前端应用（独立路径空间）
+    # Sub-Web 前端应用
     # ========================
     location /subconvert/ {
         alias /opt/sub-web-modify/dist/;
         index index.html;
-        
-        # 精确的路径解析
+
+        # Vue SPA 路由兜底
         try_files \$uri \$uri/ /index.html;
-        
-        # 缓存静态资源
-        location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg)\$ {
+
+        # Sub-Web 静态资源缓存（必须包含字体）
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf)$ {
             expires 1y;
             add_header Cache-Control "public, immutable";
         }
     }
 
     # ========================
-    # SubConverter API 后端
+    # SubConverter API
     # ========================
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        
+
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
-        
+
         add_header Access-Control-Allow-Origin *;
         add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
         add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
-        
+
         if (\$request_method = 'OPTIONS') {
             add_header Access-Control-Allow-Origin *;
             add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
@@ -396,7 +396,6 @@ server {
     }
 }
 
-# HTTP 强制跳转 HTTPS
 server {
     listen 80;
     listen [::]:80;
@@ -404,6 +403,7 @@ server {
     return 301 https://\$server_name\$request_uri;
 }
 EOF
+
 
 # 移除默认站点，启用新配置
 rm -f /etc/nginx/sites-enabled/default

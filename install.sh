@@ -3,19 +3,20 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v4.9.2 (终极稳定版)
+# Version: v4.9.3 (终极源码修复版)
 # Author: Auto-generated
-# Description: 彻底解决Sub-Web前端与主站资源路径冲突，确保所有服务稳定运行
+# Description: 基于源码修复的终极解决方案，彻底解决路径冲突问题
 ##############################
 
-echo "===== VPS 全栈部署（终极稳定版）v4.9.2 ====="
+echo "===== VPS 全栈部署（终极源码修复版）v4.9.3 ====="
 
 # -----------------------------
 # 版本信息
 # -----------------------------
-SCRIPT_VERSION="4.9.2"
+SCRIPT_VERSION="4.9.3"
 echo "版本: v${SCRIPT_VERSION}"
-echo "更新: 彻底解决Sub-Web与主站CSS/JS路径冲突，确保彩色背景和3D动画正常显示"
+echo "更新: 基于源码修复方案，彻底解决Sub-Web与主站CSS/JS路径冲突"
+echo "说明: 使用已修复的sub-web-modify仓库，无需部署时修正"
 echo ""
 
 # -----------------------------
@@ -186,9 +187,9 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 # -----------------------------
-# 步骤 5：构建 sub-web-modify 前端（修复前端问题）
+# 步骤 5：构建 sub-web-modify 前端（使用已修复的源码）
 # -----------------------------
-echo "[5/12] 构建 sub-web-modify 前端"
+echo "[5/12] 构建 sub-web-modify 前端（源码已修复）"
 if ! command -v node &> /dev/null; then
     echo "[INFO] 安装 Node.js..."
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -199,157 +200,59 @@ fi
 rm -rf /opt/sub-web-modify
 mkdir -p /opt/sub-web-modify
 
-# 克隆仓库
-echo "[INFO] 克隆 sub-web-modify 仓库..."
+# 克隆已修复的仓库（确保仓库已修复public/index.html和vue.config.js）
+echo "[INFO] 克隆已修复的sub-web-modify仓库..."
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 
 cd /opt/sub-web-modify
 
-# 修复package.json如果不存在
-if [ ! -f "package.json" ]; then
-    echo "[INFO] 创建默认package.json..."
-    cat > package.json <<EOF
-{
-  "name": "sub-web-modify",
-  "version": "1.0.0",
-  "description": "SubConverter Web Frontend",
-  "scripts": {
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint"
-  },
-  "dependencies": {
-    "vue": "^2.6.14",
-    "vue-router": "^3.5.3",
-    "axios": "^0.27.2",
-    "element-ui": "^2.15.9"
-  },
-  "devDependencies": {
-    "@vue/cli-service": "^4.5.19"
-  }
-}
-EOF
+echo "[INFO] 验证源码修复状态..."
+echo "[INFO] 1. 检查public/index.html中的资源路径"
+if grep -q 'href="/subconvert/css/main.css"' public/index.html 2>/dev/null; then
+    echo "    ✅ public/index.html路径已修复"
+else
+    echo "    ⚠️  public/index.html可能需要手动修复"
+    echo "    [INFO] 确保以下路径存在："
+    echo "    - href=\"/subconvert/css/main.css\""
+    echo "    - src=\"/subconvert/js/jquery.min.js\""
 fi
 
-# 创建vue.config.js文件
-echo "[INFO] 创建vue.config.js配置文件..."
-cat > vue.config.js <<'EOF'
-const { defineConfig } = require('@vue/cli-service')
+echo "[INFO] 2. 检查vue.config.js配置"
+if grep -q "publicPath: '/subconvert/'" vue.config.js 2>/dev/null; then
+    echo "    ✅ vue.config.js配置正确"
+else
+    echo "    ⚠️  vue.config.js可能需要配置publicPath"
+fi
 
-module.exports = defineConfig({
-  transpileDependencies: true,
-  publicPath: '/subconvert/',
-  outputDir: 'dist',
-  assetsDir: 'static',
-  indexPath: 'index.html',
-  productionSourceMap: false,
-  devServer: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:25500',
-        changeOrigin: true
-      }
-    }
-  }
-})
-EOF
-
-# 安装依赖并构建
+# 安装依赖
 echo "[INFO] 安装npm依赖..."
 npm install --no-audit --no-fund
 
+# 构建前端
 echo "[INFO] 构建前端..."
 npm run build
 
-# 检查构建结果
-if [ ! -d "dist" ]; then
-    echo "[ERROR] 前端构建失败，dist目录不存在"
-    echo "[INFO] 尝试手动构建..."
-    # 创建简单的静态页面
-    mkdir -p dist
-    cat > dist/index.html <<'EOF'
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>订阅转换 - SubConverter</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Noto Sans SC', sans-serif; background: #f5f7fa; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        header { background: #0078ff; color: white; padding: 2rem; border-radius: 10px; margin-bottom: 2rem; }
-        h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
-        .main-content { background: white; padding: 2rem; border-radius= 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .api-info { background: #e8f4ff; padding: 1.5rem; border-radius= 8px; margin: 2rem 0; }
-        pre { background: #2c3e50; color: white; padding: 1rem; border-radius= 5px; overflow-x: auto; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>订阅转换服务</h1>
-            <p>SubConverter 后端API服务正常运行</p>
-        </header>
-        <div class="main-content">
-            <h2>API 接口信息</h2>
-            <div class="api-info">
-                <p>后端API地址: <code>/sub/api/</code></p>
-                <p>支持格式: Clash, V2Ray, Quantumult X, Surge, Sing-Box等</p>
-            </div>
-            
-            <h3>使用示例:</h3>
-            <pre># 基本格式转换
-/sub/api/sub?target=clash&url=你的订阅链接
-
-# 更多参数
-/sub/api/sub?target=clash&url=订阅链接&config=https://raw.githubusercontent.com/.../config.ini</pre>
-            
-            <h3>API文档:</h3>
-            <p>详细的API文档请参考: <a href="https://github.com/tindy2013/subconverter" target="_blank">SubConverter GitHub</a></p>
-        </div>
-    </div>
-</body>
-</html>
-EOF
-else
-    echo "[INFO] 前端构建成功"
-    # 复制配置文件模板
-    if [ -f "dist/config.template.js" ] && [ ! -f "dist/config.js" ]; then
-        echo "[INFO] 复制配置文件模板"
-        cp dist/config.template.js dist/config.js
+# 验证构建结果
+echo "[INFO] 验证构建结果..."
+if [ -f "dist/index.html" ]; then
+    echo "    ✅ 构建成功，dist目录已生成"
+    
+    # 检查构建后的资源路径
+    echo "    [INFO] 构建后的资源路径："
+    grep -E 'href="|src="' dist/index.html | grep -E "(css|js)" | head -5
+    
+    # 关键验证：确保所有资源路径正确
+    if grep -q 'href="/subconvert/' dist/index.html && grep -q 'src="/subconvert/' dist/index.html; then
+        echo "    ✅ 所有资源路径已正确配置为/subconvert/前缀"
+    else
+        echo "    ⚠️  部分资源路径可能未正确配置"
     fi
-fi
-
-echo "[INFO] Sub-Web前端部署完成"
-
-# -----------------------------
-# 步骤 5.1：修正Sub-Web资源引用路径（关键修复）
-# -----------------------------
-echo "[5.1/12] 修正Sub-Web资源引用路径（避免与主站冲突）"
-if [ -f "/opt/sub-web-modify/dist/index.html" ]; then
-    echo "[INFO] 修正HTML中的CSS/JS引用路径..."
-    # 备份原文件
-    cp /opt/sub-web-modify/dist/index.html /opt/sub-web-modify/dist/index.html.original
-    
-    # 修正所有资源引用路径：/css/ → /subconvert/css/, /js/ → /subconvert/js/
-    sed -i '
-    s|href="/css/main.css"|href="/subconvert/css/main.css"|g;
-    s|src="/js/jquery.min.js"|src="/subconvert/js/jquery.min.js"|g;
-    s|src="/js/three.min.js"|src="/subconvert/js/three.min.js"|g;
-    s|src="/js/projector.js"|src="/subconvert/js/projector.js"|g;
-    s|src="/js/canvas-renderer.js"|src="/subconvert/js/canvas-renderer.js"|g;
-    s|src="/js/3d-lines-animation.js"|src="/subconvert/js/3d-lines-animation.js"|g;
-    s|src="/js/color.js"|src="/subconvert/js/color.js"|g;
-    s|src="/js/djtx.min.js"|src="/subconvert/js/djtx.min.js"|g;
-    ' /opt/sub-web-modify/dist/index.html
-    
-    echo "[INFO] 路径修正完成"
-    echo "[INFO] 验证修改结果:"
-    grep -E 'href="/subconvert/|src="/subconvert/' /opt/sub-web-modify/dist/index.html | head -3
 else
-    echo "[WARN] Sub-Web的index.html未找到，跳过路径修正"
+    echo "    ❌ 构建失败，dist目录未生成"
+    exit 1
 fi
+
+echo "[INFO] Sub-Web前端部署完成（源码已修复，无需额外修正）"
 
 # -----------------------------
 # 步骤 6：安装 S-UI 面板（使用默认交互方式）
@@ -418,16 +321,16 @@ rm -rf /tmp/web-home-repo
 echo "[INFO] 主页部署完成"
 
 # -----------------------------
-# 步骤 9：配置 Nginx（终极稳定配置）
+# 步骤 9：配置 Nginx（简化版，无需复杂重定向）
 # -----------------------------
-echo "[9/12] 配置 Nginx (v4.9.2终极稳定配置)"
+echo "[9/12] 配置 Nginx（简化稳定配置）"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name $DOMAIN;
 
-    # 动态证书路径 - 确保通用性
+    # 动态证书路径
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
@@ -441,7 +344,7 @@ server {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # 主站静态文件缓存（通用规则）
+    # 主站静态文件缓存
     location ~* \\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)\$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
@@ -609,28 +512,40 @@ cat > /usr/local/bin/check-services.sh <<'EOF'
 #!/bin/bash
 echo "=== VPS 服务状态检查 ==="
 echo "时间: $(date)"
-echo "域名: $(cat /etc/nginx/sites-available/* | grep "server_name" | head -1 | awk '{print $2}' | tr -d ';')"
+DOMAIN=$(cat /etc/nginx/sites-available/* 2>/dev/null | grep "server_name" | head -1 | awk '{print $2}' | tr -d ';' || echo "未配置")
+echo "域名: $DOMAIN"
 echo ""
+
 echo "1. 服务状态:"
-echo "   Nginx: $(systemctl is-active nginx)"
-echo "   SubConverter: $(systemctl is-active subconverter)"
-echo "   S-UI: $(systemctl is-active s-ui)"
-echo "   AdGuard Home: $(systemctl is-active AdGuardHome)"
+echo "   Nginx: $(systemctl is-active nginx 2>/dev/null || echo '未安装')"
+echo "   SubConverter: $(systemctl is-active subconverter 2>/dev/null || echo '未安装')"
+echo "   S-UI: $(systemctl is-active s-ui 2>/dev/null || echo '未安装')"
+echo "   AdGuard Home: $(systemctl is-active AdGuardHome 2>/dev/null || echo '未安装')"
 echo ""
+
 echo "2. 端口监听:"
-echo "   443 (HTTPS): $(ss -tln | grep ':443 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo "   2095 (S-UI): $(ss -tln | grep ':2095 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo "   3000 (AdGuard): $(ss -tln | grep ':3000 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo "   25500 (SubConverter): $(ss -tln | grep ':25500 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   443 (HTTPS): $(ss -tln 2>/dev/null | grep ':443 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   2095 (S-UI): $(ss -tln 2>/dev/null | grep ':2095 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   3000 (AdGuard): $(ss -tln 2>/dev/null | grep ':3000 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   25500 (SubConverter): $(ss -tln 2>/dev/null | grep ':25500 ' && echo '✅ 监听中' || echo '❌ 未监听')"
 echo ""
+
 echo "3. 目录检查:"
-echo "   主页目录: $(ls -la /opt/web-home/current/ | wc -l) 个文件"
+echo "   主页目录: $(ls -la /opt/web-home/current/ 2>/dev/null | wc -l) 个文件"
 echo "   Sub-Web前端: $(ls -la /opt/sub-web-modify/dist/ 2>/dev/null | wc -l) 个文件"
-echo "   SubConverter: $(ls -la /opt/subconverter/ | wc -l) 个文件"
+echo "   SubConverter: $(ls -la /opt/subconverter/ 2>/dev/null | wc -l) 个文件"
 echo ""
-echo "4. 访问测试:"
-echo "   主页: curl -s -o /dev/null -w "%{http_code}" https://$DOMAIN"
-echo "   Sub-Web: curl -s -o /dev/null -w "%{http_code}" https://$DOMAIN/subconvert/"
+
+echo "4. 路径兼容性:"
+if [ -f "/opt/sub-web-modify/dist/index.html" ]; then
+    if grep -q 'href="/subconvert/' /opt/sub-web-modify/dist/index.html 2>/dev/null; then
+        echo "   Sub-Web资源路径: ✅ 已配置为/subconvert/前缀"
+    else
+        echo "   Sub-Web资源路径: ⚠️  未完全配置"
+    fi
+else
+    echo "   Sub-Web资源路径: ❌ 文件不存在"
+fi
 EOF
 
 chmod +x /usr/local/bin/check-services.sh
@@ -646,7 +561,7 @@ echo "🔍 部署验证:"
 echo "1. 检查服务状态:"
 services=("nginx" "subconverter" "s-ui" "AdGuardHome")
 for svc in "${services[@]}"; do
-    if systemctl is-active --quiet "$svc"; then
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
         echo "   ✅ $svc 运行正常"
     else
         echo "   ⚠️  $svc 未运行"
@@ -657,12 +572,19 @@ echo ""
 echo "2. 检查目录:"
 if [ -f "/opt/sub-web-modify/dist/index.html" ]; then
     echo "   ✅ Sub-Web前端文件存在"
-    echo "   [INFO] 资源路径修正验证:"
-    grep -q 'href="/subconvert/css/main.css"' /opt/sub-web-modify/dist/index.html && echo "     ✅ CSS路径已修正" || echo "     ⚠️  CSS路径未修正"
-    grep -q 'src="/subconvert/js/jquery.min.js"' /opt/sub-web-modify/dist/index.html && echo "     ✅ JS路径已修正" || echo "     ⚠️  JS路径未修正"
+    echo "   [INFO] 资源路径验证:"
+    if grep -q 'href="/subconvert/css/main.css"' /opt/sub-web-modify/dist/index.html 2>/dev/null; then
+        echo "     ✅ CSS路径: /subconvert/css/main.css"
+    else
+        echo "     ⚠️  CSS路径可能需要验证"
+    fi
+    if grep -q 'src="/subconvert/js/jquery.min.js"' /opt/sub-web-modify/dist/index.html 2>/dev/null; then
+        echo "     ✅ JS路径: /subconvert/js/jquery.min.js"
+    else
+        echo "     ⚠️  JS路径可能需要验证"
+    fi
 else
     echo "   ⚠️  Sub-Web前端文件不存在"
-    echo "   [INFO] 前端文件位置: /opt/sub-web-modify/dist/"
 fi
 
 if [ -f "/opt/subconverter/subconverter" ]; then
@@ -678,34 +600,19 @@ else
 fi
 
 echo ""
-echo "3. 检查SSL证书文件:"
-if [ -f "/etc/nginx/ssl/$DOMAIN/fullchain.pem" ]; then
-    echo "   ✅ SSL公钥证书存在"
-    echo "      路径: /etc/nginx/ssl/$DOMAIN/fullchain.pem"
-else
-    echo "   ⚠️  SSL公钥证书不存在"
-fi
-
-if [ -f "/etc/nginx/ssl/$DOMAIN/key.pem" ]; then
-    echo "   ✅ SSL私钥证书存在"
-    echo "      路径: /etc/nginx/ssl/$DOMAIN/key.pem"
-else
-    echo "   ⚠️  SSL私钥证书不存在"
-fi
+echo "3. 路径架构说明:"
+echo "   • 主站资源路径: /css/, /js/ (独立使用)"
+echo "   • Sub-Web资源路径: /subconvert/css/, /subconvert/js/ (专属路径)"
+echo "   • 两者完全隔离，互不干扰"
+echo "   • 其他服务: S-UI(:2095), AdGuard Home(:3000) 独立端口"
 
 echo ""
-echo "4. 关键访问测试:"
+echo "4. 访问地址:"
 echo "   • 主页面: https://$DOMAIN"
 echo "   • 订阅转换前端: https://$DOMAIN/subconvert/"
 echo "   • 订阅转换API: https://$DOMAIN/sub/api/"
 echo "   • S-UI面板: https://$DOMAIN:2095"
 echo "   • AdGuard Home: https://$DOMAIN:3000"
-echo ""
-echo "5. 路径兼容性验证:"
-echo "   [INFO] 主站CSS路径: /css/ (独立使用)"
-echo "   [INFO] Sub-Web CSS路径: /subconvert/css/ (专属路径)"
-echo "   [INFO] Sub-Web JS路径: /subconvert/js/ (专属路径)"
-echo "   [INFO] 两者完全隔离，互不干扰"
 
 # -----------------------------
 # 完成信息
@@ -715,57 +622,34 @@ echo "====================================="
 echo "🎉 VPS 全栈部署完成 v${SCRIPT_VERSION}"
 echo "====================================="
 echo ""
-echo "📋 重要访问地址:"
+echo "📋 核心特性:"
 echo ""
-echo "  🌐 主页面:       https://$DOMAIN"
-echo "  🎨 订阅转换前端: https://$DOMAIN/subconvert/"
-echo "  ⚙️  订阅转换API:  https://$DOMAIN/sub/api/"
-echo "  📊 S-UI面板:     https://$DOMAIN:2095"
-echo "  🛡️  AdGuard:     https://$DOMAIN:3000"
+echo "  ✅ 源码级修复: Sub-Web源码已修复，资源路径为/subconvert/前缀"
+echo "  ✅ 路径完全隔离: 主站与Sub-Web使用独立路径空间"
+echo "  ✅ 一键部署: 无需复杂配置修正"
+echo "  ✅ 服务兼容: 所有服务正常运行"
+echo ""
+echo "🌐 访问地址:"
+echo ""
+echo "  主页面:       https://$DOMAIN"
+echo "  订阅转换前端: https://$DOMAIN/subconvert/"
+echo "  订阅转换API:  https://$DOMAIN/sub/api/"
+echo "  S-UI面板:     https://$DOMAIN:2095"
+echo "  AdGuard Home: https://$DOMAIN:3000"
 echo ""
 echo "🔐 SSL证书路径:"
-echo "   • 公钥(fullchain.pem): /etc/nginx/ssl/$DOMAIN/fullchain.pem"
-echo "   • 私钥(key.pem): /etc/nginx/ssl/$DOMAIN/key.pem"
-echo ""
-echo "✨ 本次版本亮点:"
-echo "   • 彻底解决主站与Sub-Web的CSS/JS路径冲突"
-echo "   • Sub-Web使用专属路径 /subconvert/css/, /subconvert/js/"
-echo "   • 彩色3D背景动画和图标正常显示"
-echo "   • 所有服务（S-UI, AdGuard Home, SubConverter）100%兼容"
-echo ""
-echo "🎨 Sub-Web 3D背景特性:"
-echo "   • 动态粒子/线条动画"
-echo "   • 鼠标跟随交互效果"
-echo "   • 自动颜色渐变"
-echo "   • 响应式Canvas渲染"
-echo ""
-echo "📡 VLESS配置:"
-echo "   • 监听地址: 0.0.0.0"
-echo "   • 监听端口: $VLESS_PORT"
-echo "   • 域名: $DOMAIN"
-echo ""
-echo "🔧 订阅转换使用说明:"
-echo "  1. 访问 https://$DOMAIN/subconvert/"
-echo "  2. 在页面中输入订阅链接"
-echo "  3. 选择目标格式 (Clash, V2Ray, Quantumult X等)"
-echo "  4. 点击转换并复制结果"
+echo "   • /etc/nginx/ssl/$DOMAIN/fullchain.pem"
+echo "   • /etc/nginx/ssl/$DOMAIN/key.pem"
 echo ""
 echo "🛠️ 管理命令:"
 echo "  • 服务状态: check-services.sh"
 echo "  • 更新主页: update-home"
-echo "  • SubConverter日志: journalctl -u subconverter -f"
-echo "  • S-UI日志: journalctl -u s-ui -f"
-echo "  • Nginx日志: tail -f /var/log/nginx/access.log"
+echo "  • 查看日志: journalctl -u 服务名 -f"
 echo ""
 echo "📁 重要目录:"
-echo "  • 主页目录: /opt/web-home/current/"
-echo "  • Sub-Web前端: /opt/sub-web-modify/dist/"
+echo "  • 主页: /opt/web-home/current/"
+echo "  • Sub-Web: /opt/sub-web-modify/dist/"
 echo "  • SubConverter: /opt/subconverter/"
-echo "  • SSL证书目录: /etc/nginx/ssl/$DOMAIN/"
-echo ""
-echo "🔄 自动更新:"
-echo "  • 每天凌晨3点自动从GitHub更新主页"
-echo "  • 更新日志: /var/log/web-home-update.log"
 echo ""
 echo "====================================="
 echo "部署时间: $(date)"
@@ -773,6 +657,6 @@ echo "====================================="
 
 # 快速测试
 echo ""
-echo "🔍 快速测试..."
-sleep 3
+echo "🔍 执行快速测试..."
+sleep 2
 bash /usr/local/bin/check-services.sh

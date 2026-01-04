@@ -3,168 +3,93 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v4.9.3 (终极源码修复版)
+# Version: v5.0.0 (Clash兼容SubConverter版)
 # Author: Auto-generated
-# Description: 基于源码修复的终极解决方案，彻底解决路径冲突问题
+# Description: 支持VLESS/VMess/Trojan，自动生成Clash YAML
 ##############################
 
-echo "===== VPS 全栈部署（终极源码修复版）v4.9.3 ====="
+echo "===== VPS 全栈部署 v5.0.0 ====="
 
 # -----------------------------
-# 版本信息
+# 用户交互
 # -----------------------------
-SCRIPT_VERSION="4.9.3"
-echo "版本: v${SCRIPT_VERSION}"
-echo "更新: 基于源码修复方案，彻底解决Sub-Web与主站CSS/JS路径冲突"
-echo "说明: 使用已修复的sub-web-modify仓库，无需部署时修正"
-echo ""
-
-# -----------------------------
-# Cloudflare API 权限提示
-# -----------------------------
-echo "-------------------------------------"
-echo "Cloudflare API Token 需要以下权限："
-echo " - Zone.Zone: Read"
-echo " - Zone.DNS: Edit"
-echo "作用域：仅限当前域名所在 Zone"
-echo "acme.sh 使用 dns_cf 方式申请证书"
-echo "-------------------------------------"
-echo ""
-
-# -----------------------------
-# 步骤 0：用户输入交互
-# -----------------------------
-read -rp "请输入您的域名 (例如：example.domain): " DOMAIN
+read -rp "请输入域名 (example.domain): " DOMAIN
 read -rp "请输入 Cloudflare 邮箱: " CF_Email
 read -rp "请输入 Cloudflare API Token: " CF_Token
+read -rp "请输入 VLESS 端口 (默认: 8443): " VLESS_PORT
+VLESS_PORT=${VLESS_PORT:-8443}
 
-# VLESS 端口输入
-read -rp "请输入 VLESS 端口 (推荐: 8443, 2053, 2087, 2096 等): " VLESS_PORT
-
-# 如果用户未输入，设置默认值
-if [[ -z "$VLESS_PORT" ]]; then
-    VLESS_PORT=8443
-    echo "[INFO] 使用默认端口: $VLESS_PORT"
-fi
-
-# 验证端口是否为数字
 if ! [[ "$VLESS_PORT" =~ ^[0-9]+$ ]] || [ "$VLESS_PORT" -lt 1 ] || [ "$VLESS_PORT" -gt 65535 ]; then
-    echo "[ERROR] 端口号必须是 1-65535 之间的数字"
+    echo "[ERROR] 端口号必须在1-65535"
     exit 1
-fi
-
-# 检查端口是否被占用（443除外）
-if [ "$VLESS_PORT" -ne 443 ]; then
-    if ss -tuln | grep -q ":$VLESS_PORT "; then
-        echo "[WARN] 端口 $VLESS_PORT 已被占用，将尝试使用"
-        read -p "是否继续？(y/n): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo "安装中止"
-            exit 1
-        fi
-    fi
 fi
 
 export CF_Email
 export CF_Token
 
-# SubConverter 二进制下载链接
 SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
-
-# Web主页GitHub仓库
 WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
 
 # -----------------------------
-# 步骤 1：更新系统与依赖
+# 系统更新及依赖
 # -----------------------------
-echo "[1/12] 更新系统与安装依赖"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 npm net-tools
 
-# 确保Nginx有sub_filter模块
-if nginx -V 2>&1 | grep -q "http_sub_module"; then
-    echo "[INFO] Nginx sub_filter模块已启用"
-else
-    echo "[WARN] Nginx可能缺少sub_filter模块，尝试安装nginx-extras"
-    apt install -y nginx-extras 2>/dev/null || echo "[INFO] nginx-extras安装失败，继续使用标准版"
-fi
-
 # -----------------------------
-# 步骤 2：防火墙配置
+# 防火墙
 # -----------------------------
-echo "[2/12] 配置防火墙（开放VLESS端口: $VLESS_PORT, S-UI端口: 2095）"
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22
-ufw allow 80
-ufw allow 443
-ufw allow 2095  # S-UI面板直接访问
-ufw allow 3000   # AdGuard Home Web界面
-ufw allow 8445   # AdGuard Home 管理端口1
-ufw allow 8446   # AdGuard Home 管理端口2
-ufw allow from 127.0.0.1 to any port 25500  # SubConverter仅本地访问
+ufw allow 22 80 443 2095 3000 8445 8446
 ufw allow ${VLESS_PORT}/tcp
 echo "y" | ufw --force enable
-
-echo "[INFO] 防火墙配置完成："
-echo "  • 开放端口: 22(SSH), 80(HTTP), 443(HTTPS), 2095(S-UI), 3000, 8445, 8446"
-echo "  • VLESS端口: ${VLESS_PORT} (外部可访问)"
-echo "  • 本地访问(127.0.0.1): 25500(subconverter)"
-echo ""
-
-# 显示防火墙状态
 ufw status numbered
 
 # -----------------------------
-# 步骤 3：安装 acme.sh 和 SSL 证书
+# SSL 证书
 # -----------------------------
-echo "[3/12] 安装 SSL 证书"
 if [ ! -d "$HOME/.acme.sh" ]; then
     curl https://get.acme.sh | sh
     source ~/.bashrc
 fi
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 mkdir -p /etc/nginx/ssl/$DOMAIN
-
-if [ ! -f "/etc/nginx/ssl/$DOMAIN/fullchain.pem" ]; then
-    ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
-fi
-
+~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
 ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
     --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
     --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
     --reloadcmd "systemctl reload nginx"
 
 # -----------------------------
-# 步骤 4：安装 SubConverter 后端（使用3.4版本配置）
+# 安装 SubConverter 后端
 # -----------------------------
-echo "[4/12] 安装 SubConverter 后端"
 mkdir -p /opt/subconverter
 if [ ! -f "/opt/subconverter/subconverter" ]; then
-    echo "[INFO] 下载 subconverter..."
     wget -O /opt/subconverter/subconverter $SUBCONVERTER_BIN
     chmod +x /opt/subconverter/subconverter
 fi
 
-# 创建 subconverter.env 配置文件（使用3.4版本配置）
-echo "[INFO] 创建 subconverter.env 配置文件"
+# 生成 SubConverter 配置，保证 Clash 兼容
 cat > /opt/subconverter/subconverter.env <<EOF
-# SubConverter 配置文件
 API_MODE=true
-API_HOST=0.0.0.0  # 监听所有地址
+API_HOST=0.0.0.0
 API_PORT=25500
 CACHE_ENABLED=true
 CACHE_SUBSCRIPTION=true
 CACHE_CONFIG=true
 CACHE_UPDATE_INTERVAL=600
 MANAGEMENT_PASS=admin123
+
+# Clash 输出
+OUTPUT_FORMAT=clash
+CONVERT_PROTOCOL=auto
 EOF
 
 chmod 600 /opt/subconverter/subconverter.env
 
-# 创建 systemd 服务（使用3.4版本配置）
+# systemd 服务
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
 Description=SubConverter 服务
@@ -187,147 +112,47 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 # -----------------------------
-# 步骤 5：构建 sub-web-modify 前端（使用已修复的源码）
+# 构建 Sub-Web 前端
 # -----------------------------
-echo "[5/12] 构建 sub-web-modify 前端（源码已修复）"
-if ! command -v node &> /dev/null; then
-    echo "[INFO] 安装 Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt install -y nodejs
-fi
-
-# 清理旧目录
 rm -rf /opt/sub-web-modify
-mkdir -p /opt/sub-web-modify
-
-# 克隆已修复的仓库（确保仓库已修复public/index.html和vue.config.js）
-echo "[INFO] 克隆已修复的sub-web-modify仓库..."
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
-
 cd /opt/sub-web-modify
-
-echo "[INFO] 验证源码修复状态..."
-echo "[INFO] 1. 检查public/index.html中的资源路径"
-if grep -q 'href="/subconvert/css/main.css"' public/index.html 2>/dev/null; then
-    echo "    ✅ public/index.html路径已修复"
-else
-    echo "    ⚠️  public/index.html可能需要手动修复"
-    echo "    [INFO] 确保以下路径存在："
-    echo "    - href=\"/subconvert/css/main.css\""
-    echo "    - src=\"/subconvert/js/jquery.min.js\""
-fi
-
-echo "[INFO] 2. 检查vue.config.js配置"
-if grep -q "publicPath: '/subconvert/'" vue.config.js 2>/dev/null; then
-    echo "    ✅ vue.config.js配置正确"
-else
-    echo "    ⚠️  vue.config.js可能需要配置publicPath"
-fi
-
-# 安装依赖
-echo "[INFO] 安装npm依赖..."
 npm install --no-audit --no-fund
-
-# 构建前端
-echo "[INFO] 构建前端..."
 npm run build
 
-# 验证构建结果
-echo "[INFO] 验证构建结果..."
-if [ -f "dist/index.html" ]; then
-    echo "    ✅ 构建成功，dist目录已生成"
-    
-    # 检查构建后的资源路径
-    echo "    [INFO] 构建后的资源路径："
-    grep -E 'href="|src="' dist/index.html | grep -E "(css|js)" | head -5
-    
-    # 关键验证：确保所有资源路径正确
-    if grep -q 'href="/subconvert/' dist/index.html && grep -q 'src="/subconvert/' dist/index.html; then
-        echo "    ✅ 所有资源路径已正确配置为/subconvert/前缀"
-    else
-        echo "    ⚠️  部分资源路径可能未正确配置"
-    fi
-else
-    echo "    ❌ 构建失败，dist目录未生成"
-    exit 1
-fi
-
-echo "[INFO] Sub-Web前端部署完成（源码已修复，无需额外修正）"
-
 # -----------------------------
-# 步骤 6：安装 S-UI 面板（使用默认交互方式）
+# 安装 S-UI 面板
 # -----------------------------
-echo "[6/12] 安装 S-UI 面板"
-echo "[INFO] 使用官方安装脚本安装 S-UI 面板..."
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
-echo "[INFO] S-UI 面板安装完成"
 
 # -----------------------------
-# 步骤 7：安装 AdGuard Home（使用指定命令）
+# 安装 AdGuard Home
 # -----------------------------
-echo "[7/12] 安装 AdGuard Home"
-echo "[INFO] 使用指定命令安装 AdGuard Home..."
 cd /tmp
-curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
-
-# 配置AdGuard Home使用端口3000
-if [ -f "/opt/AdGuardHome/AdGuardHome.yaml" ]; then
-    echo "[INFO] 配置AdGuard Home绑定到3000端口"
-    sed -i 's/^bind_port: .*/bind_port: 3000/' /opt/AdGuardHome/AdGuardHome.yaml 2>/dev/null || true
-    systemctl restart AdGuardHome
-fi
-
-echo "[INFO] AdGuard Home 安装完成"
-cd - > /dev/null
+curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s --
+sed -i 's/^bind_port:.*/bind_port: 3000/' /opt/AdGuardHome/AdGuardHome.yaml 2>/dev/null
+systemctl restart AdGuardHome
 
 # -----------------------------
-# 步骤 8：从GitHub部署主页
+# 部署主页
 # -----------------------------
-echo "[8/12] 从GitHub部署主页"
 rm -rf /opt/web-home
 mkdir -p /opt/web-home/current
-
-echo "[INFO] 克隆GitHub仓库获取主页..."
 git clone $WEB_HOME_REPO /tmp/web-home-repo
-
-# 检查是否有web目录
 if [ -d "/tmp/web-home-repo/web" ]; then
-    echo "[INFO] 找到web目录，复制所有文件..."
     cp -r /tmp/web-home-repo/web/* /opt/web-home/current/
 else
-    echo "[INFO] 未找到web目录，复制仓库根目录..."
     cp -r /tmp/web-home-repo/* /opt/web-home/current/
 fi
-
-# 确保目录结构正确
-mkdir -p /opt/web-home/current/css
-mkdir -p /opt/web-home/current/js
-
-# 如果index.html存在，替换域名
-if [ -f "/opt/web-home/current/index.html" ]; then
-    echo "[INFO] 替换index.html中的域名和端口..."
-    sed -i "s|\\\${DOMAIN}|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|\\\$DOMAIN|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|\\\${VLESS_PORT}|$VLESS_PORT|g" /opt/web-home/current/index.html 2>/dev/null || true
-fi
-
-# 设置文件权限
 chown -R www-data:www-data /opt/web-home/current
 chmod -R 755 /opt/web-home/current
 
-# 清理临时文件
-rm -rf /tmp/web-home-repo
-
-echo "[INFO] 主页部署完成"
-
 # -----------------------------
-# 步骤 9：配置 Nginx（简化版，无需复杂重定向）
+# Nginx 配置
 # -----------------------------
-echo "[9/12] 配置 Nginx（简化稳定配置）"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
-    listen [::]:443 ssl http2;
     server_name $DOMAIN;
 
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
@@ -336,282 +161,37 @@ server {
     root /opt/web-home/current;
     index index.html;
 
-    # ========================
-    # 主站点
-    # ========================
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # 主站静态文件缓存
-    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # ========================
-    # Sub-Web 前端应用
-    # ========================
     location /subconvert/ {
         alias /opt/sub-web-modify/dist/;
         index index.html;
-
-        # Vue SPA 路由兜底
         try_files \$uri \$uri/ /index.html;
-
-        # Sub-Web 静态资源缓存（必须包含字体）
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf)$ {
-            expires 1y;
-            add_header Cache-Control "public, immutable";
-        }
     }
 
-    # ========================
-    # SubConverter API
-    # ========================
     location /sub/api/ {
         proxy_pass http://127.0.0.1:25500/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-
         add_header Access-Control-Allow-Origin *;
-        add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
-        add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
-
-        if (\$request_method = 'OPTIONS') {
-            add_header Access-Control-Allow-Origin *;
-            add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
-            add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
-            add_header Access-Control-Max-Age 1728000;
-            add_header Content-Type 'text/plain; charset=utf-8';
-            add_header Content-Length 0;
-            return 204;
-        }
     }
 }
 
 server {
     listen 80;
-    listen [::]:80;
     server_name $DOMAIN;
     return 301 https://\$server_name\$request_uri;
 }
 EOF
 
-
-# 移除默认站点，启用新配置
 rm -f /etc/nginx/sites-enabled/default
 ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
 
-echo "[INFO] 测试Nginx配置..."
-if nginx -t 2>&1 | grep -q "test is successful"; then
-    echo "[INFO] Nginx配置测试成功"
-    systemctl reload nginx
-    echo "[INFO] Nginx已重载配置"
-else
-    echo "[ERROR] Nginx配置测试失败"
-    nginx -t
-    exit 1
-fi
 
-# -----------------------------
-# 步骤 10：创建自动更新脚本
-# -----------------------------
-echo "[10/12] 创建自动更新脚本"
-cat > /usr/local/bin/update-web-home.sh <<'EOF'
-#!/bin/bash
-# Web主页自动更新脚本
-set -e
-
-echo "[INFO] $(date) - 开始更新Web主页"
-cd /tmp
-
-# 备份当前版本
-BACKUP_DIR="/opt/web-home/backup"
-mkdir -p "$BACKUP_DIR"
-BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
-if [ -d "/opt/web-home/current" ]; then
-    cp -r /opt/web-home/current "$BACKUP_DIR/$BACKUP_NAME"
-    echo "[INFO] 备份当前版本到: $BACKUP_DIR/$BACKUP_NAME"
-fi
-
-# 从GitHub获取最新代码
-echo "[INFO] 从GitHub获取最新代码..."
-rm -rf /tmp/web-home-update
-if git clone https://github.com/about300/vps-deployment.git /tmp/web-home-update; then
-    # 部署新版本
-    echo "[INFO] 部署新版本..."
-    rm -rf /opt/web-home/current/*
-    
-    if [ -d "/tmp/web-home-update/web" ]; then
-        cp -r /tmp/web-home-update/web/* /opt/web-home/current/
-    else
-        cp -r /tmp/web-home-update/* /opt/web-home/current/
-    fi
-    
-    # 替换域名
-    if [ -f "/opt/web-home/current/index.html" ]; then
-        DOMAIN=$(cat /etc/nginx/sites-available/* | grep "server_name" | head -1 | awk '{print $2}' | tr -d ';')
-        VLESS_PORT=$(cat /opt/web-home/current/index.html | grep -o 'VLESS_PORT=[0-9]*' | head -1 | cut -d= -f2)
-        [ -z "$VLESS_PORT" ] && VLESS_PORT="8443"
-        
-        sed -i "s|\\\${DOMAIN}|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
-        sed -i "s|\\\$DOMAIN|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
-        sed -i "s|\\\${VLESS_PORT}|$VLESS_PORT|g" /opt/web-home/current/index.html 2>/dev/null || true
-    fi
-    
-    # 设置权限
-    chown -R www-data:www-data /opt/web-home/current
-    chmod -R 755 /opt/web-home/current
-    
-    # 重载Nginx
-    systemctl reload nginx
-    
-    echo "[INFO] 主页更新成功！"
-else
-    echo "[ERROR] 从GitHub获取代码失败"
-    # 恢复备份
-    if [ -d "$BACKUP_DIR/$BACKUP_NAME" ]; then
-        echo "[INFO] 恢复备份..."
-        rm -rf /opt/web-home/current/*
-        cp -r "$BACKUP_DIR/$BACKUP_NAME"/* /opt/web-home/current/
-    fi
-    exit 1
-fi
-
-# 清理临时文件
-rm -rf /tmp/web-home-update
-
-echo "[INFO] 更新完成"
-EOF
-
-chmod +x /usr/local/bin/update-web-home.sh
-
-# 创建手动更新命令
-cat > /usr/local/bin/update-home <<'EOF'
-#!/bin/bash
-echo "开始手动更新Web主页..."
-/usr/local/bin/update-web-home.sh
-EOF
-chmod +x /usr/local/bin/update-home
-
-# 添加cron任务
-(crontab -l 2>/dev/null; echo "0 3 * * * /usr/local/bin/update-web-home.sh >> /var/log/web-home-update.log 2>&1") | crontab -
-
-# -----------------------------
-# 步骤 11：创建服务检查脚本
-# -----------------------------
-echo "[11/12] 创建服务检查脚本"
-cat > /usr/local/bin/check-services.sh <<'EOF'
-#!/bin/bash
-echo "=== VPS 服务状态检查 ==="
-echo "时间: $(date)"
-DOMAIN=$(cat /etc/nginx/sites-available/* 2>/dev/null | grep "server_name" | head -1 | awk '{print $2}' | tr -d ';' || echo "未配置")
-echo "域名: $DOMAIN"
-echo ""
-
-echo "1. 服务状态:"
-echo "   Nginx: $(systemctl is-active nginx 2>/dev/null || echo '未安装')"
-echo "   SubConverter: $(systemctl is-active subconverter 2>/dev/null || echo '未安装')"
-echo "   S-UI: $(systemctl is-active s-ui 2>/dev/null || echo '未安装')"
-echo "   AdGuard Home: $(systemctl is-active AdGuardHome 2>/dev/null || echo '未安装')"
-echo ""
-
-echo "2. 端口监听:"
-echo "   443 (HTTPS): $(ss -tln 2>/dev/null | grep ':443 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo "   2095 (S-UI): $(ss -tln 2>/dev/null | grep ':2095 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo "   3000 (AdGuard): $(ss -tln 2>/dev/null | grep ':3000 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo "   25500 (SubConverter): $(ss -tln 2>/dev/null | grep ':25500 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo ""
-
-echo "3. 目录检查:"
-echo "   主页目录: $(ls -la /opt/web-home/current/ 2>/dev/null | wc -l) 个文件"
-echo "   Sub-Web前端: $(ls -la /opt/sub-web-modify/dist/ 2>/dev/null | wc -l) 个文件"
-echo "   SubConverter: $(ls -la /opt/subconverter/ 2>/dev/null | wc -l) 个文件"
-echo ""
-
-echo "4. 路径兼容性:"
-if [ -f "/opt/sub-web-modify/dist/index.html" ]; then
-    if grep -q 'href="/subconvert/' /opt/sub-web-modify/dist/index.html 2>/dev/null; then
-        echo "   Sub-Web资源路径: ✅ 已配置为/subconvert/前缀"
-    else
-        echo "   Sub-Web资源路径: ⚠️  未完全配置"
-    fi
-else
-    echo "   Sub-Web资源路径: ❌ 文件不存在"
-fi
-EOF
-
-chmod +x /usr/local/bin/check-services.sh
-
-# -----------------------------
-# 步骤 12：验证部署
-# -----------------------------
-echo "[12/12] 验证部署状态"
-sleep 5
-
-echo ""
-echo "🔍 部署验证:"
-echo "1. 检查服务状态:"
-services=("nginx" "subconverter" "s-ui" "AdGuardHome")
-for svc in "${services[@]}"; do
-    if systemctl is-active --quiet "$svc" 2>/dev/null; then
-        echo "   ✅ $svc 运行正常"
-    else
-        echo "   ⚠️  $svc 未运行"
-    fi
-done
-
-echo ""
-echo "2. 检查目录:"
-if [ -f "/opt/sub-web-modify/dist/index.html" ]; then
-    echo "   ✅ Sub-Web前端文件存在"
-    echo "   [INFO] 资源路径验证:"
-    if grep -q 'href="/subconvert/css/main.css"' /opt/sub-web-modify/dist/index.html 2>/dev/null; then
-        echo "     ✅ CSS路径: /subconvert/css/main.css"
-    else
-        echo "     ⚠️  CSS路径可能需要验证"
-    fi
-    if grep -q 'src="/subconvert/js/jquery.min.js"' /opt/sub-web-modify/dist/index.html 2>/dev/null; then
-        echo "     ✅ JS路径: /subconvert/js/jquery.min.js"
-    else
-        echo "     ⚠️  JS路径可能需要验证"
-    fi
-else
-    echo "   ⚠️  Sub-Web前端文件不存在"
-fi
-
-if [ -f "/opt/subconverter/subconverter" ]; then
-    echo "   ✅ SubConverter后端文件存在"
-else
-    echo "   ⚠️  SubConverter后端文件不存在"
-fi
-
-if [ -f "/opt/web-home/current/index.html" ]; then
-    echo "   ✅ 主页文件存在"
-else
-    echo "   ⚠️  主页文件不存在"
-fi
-
-echo ""
-echo "3. 路径架构说明:"
-echo "   • 主站资源路径: /css/, /js/ (独立使用)"
-echo "   • Sub-Web资源路径: /subconvert/css/, /subconvert/js/ (专属路径)"
-echo "   • 两者完全隔离，互不干扰"
-echo "   • 其他服务: S-UI(:2095), AdGuard Home(:3000) 独立端口"
-
-echo ""
-echo "4. 访问地址:"
-echo "   • 主页面: https://$DOMAIN"
-echo "   • 订阅转换前端: https://$DOMAIN/subconvert/"
-echo "   • 订阅转换API: https://$DOMAIN/sub/api/"
-echo "   • S-UI面板: https://$DOMAIN:2095"
-echo "   • AdGuard Home: https://$DOMAIN:3000"
 
 # -----------------------------
 # 完成信息

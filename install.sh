@@ -36,15 +36,24 @@ WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
 apt update -y
 apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 npm net-tools
 
+
 # -----------------------------
-# 防火墙
+# 防火墙配置
 # -----------------------------
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22 80 443 2095 3000 8445 8446
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw allow 2095/tcp
+ufw allow 3000/tcp
 ufw allow ${VLESS_PORT}/tcp
+
+# 开启防火墙
 echo "y" | ufw --force enable
+
+# 确认防火墙状态
 ufw status numbered
 
 # -----------------------------

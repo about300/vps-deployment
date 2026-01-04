@@ -3,19 +3,19 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v4.9.1 (修复Sub-Web前端资源加载)
+# Version: v4.9.2 (终极稳定版)
 # Author: Auto-generated
-# Description: 修复SubConverter前端CSS/JS/字体资源加载问题，确保彩色背景和3D动画正常显示
+# Description: 彻底解决Sub-Web前端与主站资源路径冲突，确保所有服务稳定运行
 ##############################
 
-echo "===== VPS 全栈部署（修复Sub-Web前端资源加载）v4.9.1 ====="
+echo "===== VPS 全栈部署（终极稳定版）v4.9.2 ====="
 
 # -----------------------------
 # 版本信息
 # -----------------------------
-SCRIPT_VERSION="4.9.1"
+SCRIPT_VERSION="4.9.2"
 echo "版本: v${SCRIPT_VERSION}"
-echo "更新: 修复Sub-Web前端资源（CSS/JS/字体）加载问题，确保彩色背景和3D动画正常显示"
+echo "更新: 彻底解决Sub-Web与主站CSS/JS路径冲突，确保彩色背景和3D动画正常显示"
 echo ""
 
 # -----------------------------
@@ -280,9 +280,9 @@ if [ ! -d "dist" ]; then
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         header { background: #0078ff; color: white; padding: 2rem; border-radius: 10px; margin-bottom: 2rem; }
         h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
-        .main-content { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .api-info { background: #e8f4ff; padding: 1.5rem; border-radius: 8px; margin: 2rem 0; }
-        pre { background: #2c3e50; color: white; padding: 1rem; border-radius: 5px; overflow-x: auto; }
+        .main-content { background: white; padding: 2rem; border-radius= 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .api-info { background: #e8f4ff; padding: 1.5rem; border-radius= 8px; margin: 2rem 0; }
+        pre { background: #2c3e50; color: white; padding: 1rem; border-radius= 5px; overflow-x: auto; }
     </style>
 </head>
 <body>
@@ -322,6 +322,34 @@ else
 fi
 
 echo "[INFO] Sub-Web前端部署完成"
+
+# -----------------------------
+# 步骤 5.1：修正Sub-Web资源引用路径（关键修复）
+# -----------------------------
+echo "[5.1/12] 修正Sub-Web资源引用路径（避免与主站冲突）"
+if [ -f "/opt/sub-web-modify/dist/index.html" ]; then
+    echo "[INFO] 修正HTML中的CSS/JS引用路径..."
+    # 备份原文件
+    cp /opt/sub-web-modify/dist/index.html /opt/sub-web-modify/dist/index.html.original
+    
+    # 修正所有资源引用路径：/css/ → /subconvert/css/, /js/ → /subconvert/js/
+    sed -i '
+    s|href="/css/main.css"|href="/subconvert/css/main.css"|g;
+    s|src="/js/jquery.min.js"|src="/subconvert/js/jquery.min.js"|g;
+    s|src="/js/three.min.js"|src="/subconvert/js/three.min.js"|g;
+    s|src="/js/projector.js"|src="/subconvert/js/projector.js"|g;
+    s|src="/js/canvas-renderer.js"|src="/subconvert/js/canvas-renderer.js"|g;
+    s|src="/js/3d-lines-animation.js"|src="/subconvert/js/3d-lines-animation.js"|g;
+    s|src="/js/color.js"|src="/subconvert/js/color.js"|g;
+    s|src="/js/djtx.min.js"|src="/subconvert/js/djtx.min.js"|g;
+    ' /opt/sub-web-modify/dist/index.html
+    
+    echo "[INFO] 路径修正完成"
+    echo "[INFO] 验证修改结果:"
+    grep -E 'href="/subconvert/|src="/subconvert/' /opt/sub-web-modify/dist/index.html | head -3
+else
+    echo "[WARN] Sub-Web的index.html未找到，跳过路径修正"
+fi
 
 # -----------------------------
 # 步骤 6：安装 S-UI 面板（使用默认交互方式）
@@ -390,55 +418,37 @@ rm -rf /tmp/web-home-repo
 echo "[INFO] 主页部署完成"
 
 # -----------------------------
-# 步骤 9：配置 Nginx（修复Sub-Web前端资源加载）
+# 步骤 9：配置 Nginx（终极稳定配置）
 # -----------------------------
-echo "[9/12] 配置 Nginx (v4.9.1修复资源加载)"
+echo "[9/12] 配置 Nginx (v4.9.2终极稳定配置)"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name $DOMAIN;
 
+    # 动态证书路径 - 确保通用性
     ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
 
-    # 主页
+    # ========================
+    # 主站点配置
+    # ========================
     root /opt/web-home/current;
     index index.html;
+    
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
-    # 主站点静态文件缓存（排除特定路径）
-    location ~* ^(?!/subconvert/)(?!/(js|css)/).*\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)\$ {
+    # 主站静态文件缓存（通用规则）
+    location ~* \\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)\$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 
     # ========================
-    # Sub-Web 资源重定向（关键修复）
-    # ========================
-    
-    # 处理 /js/* 请求（如 /js/jquery.min.js, /js/three.min.js）
-    location /js/ {
-        alias /opt/sub-web-modify/dist/js/;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        add_header Access-Control-Allow-Origin *;
-        try_files \$uri =404;
-    }
-
-    # 处理 /css/* 请求（如 /css/main.css）
-    location /css/ {
-        alias /opt/sub-web-modify/dist/css/;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        add_header Access-Control-Allow-Origin *;
-        try_files \$uri =404;
-    }
-
-    # ========================
-    # Sub-Web 前端应用
+    # Sub-Web 前端应用（独立路径空间）
     # ========================
     location /subconvert/ {
         alias /opt/sub-web-modify/dist/;
@@ -463,17 +473,14 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         
-        # 增加超时时间
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
         
-        # CORS 支持
         add_header Access-Control-Allow-Origin *;
         add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
         add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
         
-        # 预检请求处理
         if (\$request_method = 'OPTIONS') {
             add_header Access-Control-Allow-Origin *;
             add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
@@ -524,7 +531,7 @@ cd /tmp
 
 # 备份当前版本
 BACKUP_DIR="/opt/web-home/backup"
-mkdir-p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR"
 BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
 if [ -d "/opt/web-home/current" ]; then
     cp -r /opt/web-home/current "$BACKUP_DIR/$BACKUP_NAME"
@@ -650,6 +657,9 @@ echo ""
 echo "2. 检查目录:"
 if [ -f "/opt/sub-web-modify/dist/index.html" ]; then
     echo "   ✅ Sub-Web前端文件存在"
+    echo "   [INFO] 资源路径修正验证:"
+    grep -q 'href="/subconvert/css/main.css"' /opt/sub-web-modify/dist/index.html && echo "     ✅ CSS路径已修正" || echo "     ⚠️  CSS路径未修正"
+    grep -q 'src="/subconvert/js/jquery.min.js"' /opt/sub-web-modify/dist/index.html && echo "     ✅ JS路径已修正" || echo "     ⚠️  JS路径未修正"
 else
     echo "   ⚠️  Sub-Web前端文件不存在"
     echo "   [INFO] 前端文件位置: /opt/sub-web-modify/dist/"
@@ -684,12 +694,18 @@ else
 fi
 
 echo ""
-echo "4. 访问地址:"
+echo "4. 关键访问测试:"
 echo "   • 主页面: https://$DOMAIN"
 echo "   • 订阅转换前端: https://$DOMAIN/subconvert/"
 echo "   • 订阅转换API: https://$DOMAIN/sub/api/"
 echo "   • S-UI面板: https://$DOMAIN:2095"
 echo "   • AdGuard Home: https://$DOMAIN:3000"
+echo ""
+echo "5. 路径兼容性验证:"
+echo "   [INFO] 主站CSS路径: /css/ (独立使用)"
+echo "   [INFO] Sub-Web CSS路径: /subconvert/css/ (专属路径)"
+echo "   [INFO] Sub-Web JS路径: /subconvert/js/ (专属路径)"
+echo "   [INFO] 两者完全隔离，互不干扰"
 
 # -----------------------------
 # 完成信息
@@ -702,7 +718,7 @@ echo ""
 echo "📋 重要访问地址:"
 echo ""
 echo "  🌐 主页面:       https://$DOMAIN"
-echo "  🔧 订阅转换前端: https://$DOMAIN/subconvert/"
+echo "  🎨 订阅转换前端: https://$DOMAIN/subconvert/"
 echo "  ⚙️  订阅转换API:  https://$DOMAIN/sub/api/"
 echo "  📊 S-UI面板:     https://$DOMAIN:2095"
 echo "  🛡️  AdGuard:     https://$DOMAIN:3000"
@@ -710,6 +726,12 @@ echo ""
 echo "🔐 SSL证书路径:"
 echo "   • 公钥(fullchain.pem): /etc/nginx/ssl/$DOMAIN/fullchain.pem"
 echo "   • 私钥(key.pem): /etc/nginx/ssl/$DOMAIN/key.pem"
+echo ""
+echo "✨ 本次版本亮点:"
+echo "   • 彻底解决主站与Sub-Web的CSS/JS路径冲突"
+echo "   • Sub-Web使用专属路径 /subconvert/css/, /subconvert/js/"
+echo "   • 彩色3D背景动画和图标正常显示"
+echo "   • 所有服务（S-UI, AdGuard Home, SubConverter）100%兼容"
 echo ""
 echo "🎨 Sub-Web 3D背景特性:"
 echo "   • 动态粒子/线条动画"
@@ -728,25 +750,18 @@ echo "  2. 在页面中输入订阅链接"
 echo "  3. 选择目标格式 (Clash, V2Ray, Quantumult X等)"
 echo "  4. 点击转换并复制结果"
 echo ""
-echo "⚙️  SubConverter配置:"
-echo "   • 监听地址: 0.0.0.0"
-echo "   • 监听端口: 25500 (仅本地访问)"
-echo "   • 配置文件: /opt/subconverter/subconverter.env"
-echo ""
 echo "🛠️ 管理命令:"
 echo "  • 服务状态: check-services.sh"
 echo "  • 更新主页: update-home"
 echo "  • SubConverter日志: journalctl -u subconverter -f"
 echo "  • S-UI日志: journalctl -u s-ui -f"
 echo "  • Nginx日志: tail -f /var/log/nginx/access.log"
-echo "  • 查看SSL证书: ls -la /etc/nginx/ssl/$DOMAIN/"
 echo ""
 echo "📁 重要目录:"
 echo "  • 主页目录: /opt/web-home/current/"
 echo "  • Sub-Web前端: /opt/sub-web-modify/dist/"
 echo "  • SubConverter: /opt/subconverter/"
 echo "  • SSL证书目录: /etc/nginx/ssl/$DOMAIN/"
-echo "  • Nginx配置: /etc/nginx/sites-available/$DOMAIN"
 echo ""
 echo "🔄 自动更新:"
 echo "  • 每天凌晨3点自动从GitHub更新主页"

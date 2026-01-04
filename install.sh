@@ -325,7 +325,6 @@ echo "[INFO] 主页部署完成"
 # -----------------------------
 echo "[9/12] 配置 Nginx（简化稳定配置）"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
-cat > /etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;

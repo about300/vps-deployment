@@ -70,7 +70,7 @@ export CF_Email
 export CF_Token
 
 # SubConverter 二进制下载链接
-SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
+# SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
 
 # Web主页GitHub仓库
 WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"

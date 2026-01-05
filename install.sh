@@ -137,16 +137,33 @@ fi
     --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
     --reloadcmd "systemctl reload nginx"
 
+
 # -----------------------------
-# 步骤 4：安装 SubConverter 后端（使用3.4版本配置）
+# 步骤 4：安装 SubConverter 后端（使用 GitHub Releases 下载）
 # -----------------------------
 echo "[4/12] 安装 SubConverter 后端"
 mkdir -p /opt/subconverter
-if [ ! -f "/opt/subconverter/subconverter" ]; then
-    echo "[INFO] 下载 subconverter..."
-    wget -O /opt/subconverter/subconverter $SUBCONVERTER_BIN
-    chmod +x /opt/subconverter/subconverter
+
+# 获取最新版本的 SubConverter Release 下载链接
+LATEST_RELEASE_URL="https://api.github.com/repos/MetaCubeX/subconverter/releases/latest"
+DOWNLOAD_URL=$(curl -s $LATEST_RELEASE_URL | jq -r '.assets[] | select(.name | test("linux-amd64")) | .browser_download_url')
+
+# 检查是否获取到下载链接
+if [[ -z "$DOWNLOAD_URL" ]]; then
+    echo "[ERROR] 未能找到适合的 SubConverter 二进制文件下载链接"
+    exit 1
 fi
+
+echo "[INFO] 下载 SubConverter 二进制文件..."
+wget -O /opt/subconverter/subconverter.tar.gz "$DOWNLOAD_URL"
+
+# 解压 SubConverter 文件
+echo "[INFO] 解压 SubConverter..."
+tar -zxvf /opt/subconverter/subconverter.tar.gz -C /opt/subconverter
+rm -f /opt/subconverter/subconverter.tar.gz  # 删除压缩包
+
+# 确保二进制文件可执行
+chmod +x /opt/subconverter/subconverter
 
 # 创建 subconverter.env 配置文件（使用3.4版本配置）
 echo "[INFO] 创建 subconverter.env 配置文件"

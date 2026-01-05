@@ -187,42 +187,12 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 # -----------------------------
-# 步骤 4.1：修改配置文件以添加 Clash 设置
-# -----------------------------
-echo "[INFO] 修改 SubConverter 配置文件以添加 Clash 设置..."
-
-# 目标配置文件路径
-config_file="/opt/subconverter/config.yaml"
-
-# 确保文件存在
-if [ -f "$config_file" ]; then
-    echo "[INFO] 发现配置文件，正在修改以添加 Clash 设置..."
-
-    # 在文件末尾添加 Clash 的配置
-    cat >> "$config_file" <<EOF
-
-# Clash配置部分
-port: 7890
-socks-port: 1080
-allow-lan: true
-mode: rule
-log-level: info
-external-controller: 127.0.0.1:9090
-EOF
-
-    # 确保配置文件格式正确
-    echo "[INFO] 已添加 Clash 配置"
-else
-    echo "[ERROR] 未找到配置文件: $config_file"
-fi
-
-# -----------------------------
 # 步骤 5：构建 sub-web-modify 前端（使用已修复的源码）
 # -----------------------------
 echo "[5/12] 构建 sub-web-modify 前端（源码已修复）"
 if ! command -v node &> /dev/null; then
     echo "[INFO] 安装 Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt install -y nodejs
 fi
 
@@ -432,6 +402,7 @@ server {
     return 301 https://\$server_name\$request_uri;
 }
 EOF
+
 
 # 移除默认站点，启用新配置
 rm -f /etc/nginx/sites-enabled/default
@@ -683,4 +654,8 @@ echo "====================================="
 echo "部署时间: $(date)"
 echo "====================================="
 
-
+# 快速测试
+echo ""
+echo "🔍 执行快速测试..."
+sleep 2
+bash /usr/local/bin/check-services.sh

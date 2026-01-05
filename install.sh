@@ -146,7 +146,7 @@ mkdir -p /opt/subconverter
 
 # 获取最新版本的 SubConverter Release 下载链接
 LATEST_RELEASE_URL="https://api.github.com/repos/MetaCubeX/subconverter/releases/latest"
-DOWNLOAD_URL=$(curl -s $LATEST_RELEASE_URL | grep "browser_download_url" | grep "linux-amd64" | head -n 1 | cut -d '"' -f 4)
+DOWNLOAD_URL=$(curl -s $LATEST_RELEASE_URL | grep '"browser_download_url":' | grep 'linux-amd64' | head -n 1 | cut -d '"' -f 4)
 
 # 检查是否获取到下载链接
 if [[ -z "$DOWNLOAD_URL" ]]; then

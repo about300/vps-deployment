@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Source+Sans+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
-        /* 保留你之前提供的 CSS */
+        /* 保留之前的样式 */
     </style>
 </head>
 <body>
@@ -99,17 +99,15 @@
             updateFooterStats();
         });
 
-        // JS 功能
         async function checkServiceStatus() {
             const servicesGrid = document.getElementById('services-grid');
             const services = [
-                { id: 'nginx', name: 'Web 服务', port: 443, icon: 'fas fa-globe' },
-                { id: 'subconvert', name: '订阅转换', port: 25500, icon: 'fas fa-exchange-alt' },
-                { id: 'sui', name: 'S-UI 面板', port: 2095, icon: 'fas fa-tachometer-alt' },
-                { id: 'adguard', name: 'AdGuard', port: 3000, icon: 'fas fa-shield-alt' }
+                { id: 'nginx', name: 'Web 服务', icon: 'fas fa-globe' },
+                { id: 'subconvert', name: '订阅转换', icon: 'fas fa-exchange-alt' },
+                { id: 'sui', name: 'S-UI 面板', icon: 'fas fa-tachometer-alt' },
+                { id: 'adguard', name: 'AdGuard', icon: 'fas fa-shield-alt' }
             ];
 
-            // 清空现有内容
             servicesGrid.innerHTML = '';
             services.forEach(service => {
                 const card = document.createElement('div');
@@ -125,7 +123,6 @@
                 servicesGrid.appendChild(card);
             });
 
-            // 模拟检测（实际应该向服务器发送请求）
             setTimeout(() => {
                 services.forEach((service, index) => {
                     const card = servicesGrid.children[index];
@@ -136,7 +133,6 @@
                             <i class="${service.icon}"></i>
                         </div>
                         <h3 class="service-title">${service.name}</h3>
-                        <p class="service-text">${service.port ? `端口: ${service.port}` : ''}</p>
                         <span class="service-status ${isOnline ? 'status-online' : 'status-offline'}">
                             ${isOnline ? '在线' : '离线'}
                         </span>
@@ -145,7 +141,6 @@
             }, 2000);
         }
 
-        // 搜索功能
         function setupSearch() {
             const searchInput = document.getElementById('search-input');
             const searchResults = document.getElementById('search-results');

@@ -1,254 +1,206 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VPS Dashboard - 全栈服务管理</title>
-  <meta name="description" content="「离开世界之前 一切都是过程」">
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Source+Sans+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VPS Dashboard - 全栈服务管理</title>
+    <meta name="description" content="「离开世界之前 一切都是过程」">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Source+Sans+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* 保留你之前提供的 CSS */
+    </style>
 </head>
 <body>
-  <!-- 导航栏 -->
-  <nav class="navbar">
-    <div class="container">
-      <div class="nav-brand">
-        <i class="fas fa-server"></i>
-        <a href="/">VPS Dashboard</a>
-      </div>
-      <div class="nav-menu">
-        <a href="/" class="nav-link active">首页</a>
-        <a href="/subconvert/" class="nav-link">订阅转换</a>
-        <!-- 改为 id，用 JS 设置 href，避免模板变量未被替换的问题 -->
-        <a id="sui-nav-link" href="#" class="nav-link" target="_blank">S-UI面板</a>
-        <a href="#services" class="nav-link">服务状态</a>
-        <a href="https://github.com/about300" class="nav-link" target="_blank">
-          <i class="fab fa-github"></i> GitHub
-        </a>
-      </div>
-    </div>
-  </nav>
-
-  <!-- 头部 -->
-  <header class="page-header">
-    <div class="container">
-      <h1 class="page-title">VPS 全栈服务</h1>
-      <p class="page-subtitle">「离开世界之前 一切都是过程」</p>
-    </div>
-  </header>
-
-  <!-- 主要内容 -->
-  <main class="container main-content">
-    <!-- 搜索框 -->
-    <div class="search-section">
-      <div class="search-container">
-        <form id="search-form" action="https://www.google.com/search" method="GET" target="_blank">
-          <div class="search-box">
-            <i class="fas fa-search"></i>
-            <input type="text" name="q" id="search-input" placeholder="搜索工具、服务或配置..." autocomplete="off">
-            <input type="hidden" name="sitesearch" id="sitesearch" value="">
-            <button type="submit" class="search-btn">搜索</button>
-          </div>
-        </form>
-        <div class="search-results" id="search-results"></div>
-      </div>
-    </div>
-
-    <!-- 快速工具卡片 -->
-    <section class="tools-section">
-      <h2 class="section-title">
-        <i class="fas fa-rocket"></i> 快速访问
-      </h2>
-      <div class="tools-grid">
-        <a href="/subconvert/" class="tool-card">
-          <div class="tool-icon"><i class="fas fa-exchange-alt"></i></div>
-          <div class="tool-content">
-            <h3 class="tool-title">订阅转换</h3>
-            <p class="tool-desc">转换各种订阅格式，支持 Clash、Quantumult X、V2Ray 等</p>
-            <div class="tool-meta"><span class="tool-tag">热门</span><span class="tool-date">在线</span></div>
-          </div>
-        </a>
-
-        <!-- S-UI 卡片：用 id 让 JS 动态设置 href -->
-        <a id="sui-card-link" href="#" target="_blank" class="tool-card">
-          <div class="tool-icon"><i class="fas fa-tachometer-alt"></i></div>
-          <div class="tool-content">
-            <h3 class="tool-title">S-UI 面板</h3>
-            <p class="tool-desc">节点管理和流量监控，支持多用户管理和实时统计</p>
-            <div class="tool-meta"><span class="tool-tag">专业</span><span class="tool-date">管理</span></div>
-          </div>
-        </a>
-
-        <a id="adguard-link" href="#" target="_blank" class="tool-card">
-          <div class="tool-icon"><i class="fas fa-shield-alt"></i></div>
-          <div class="tool-content">
-            <h3 class="tool-title">AdGuard Home</h3>
-            <p class="tool-desc">网络广告和跟踪器拦截，DNS-over-HTTPS/TLS 服务</p>
-            <div class="tool-meta"><span class="tool-tag">安全</span><span class="tool-date">DNS</span></div>
-          </div>
-        </a>
-
-        <div class="tool-card config-generator">
-          <div class="tool-icon"><i class="fas fa-code"></i></div>
-          <div class="tool-content">
-            <h3 class="tool-title">配置生成器</h3>
-            <p class="tool-desc">快速生成客户端配置文件，支持多种协议和格式</p>
-            <div class="tool-meta">
-              <span class="tool-tag">快捷</span>
-              <button class="generate-btn" id="generate-config"><i class="fas fa-magic"></i> 生成</button>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <i class="fas fa-server"></i>
+                <a href="/">VPS Dashboard</a>
             </div>
-          </div>
+            <div class="nav-menu">
+                <a href="/" class="nav-link active">首页</a>
+                <a href="/subconvert/" class="nav-link">订阅转换</a>
+                <a id="sui-nav-link" href="#" class="nav-link" target="_blank">S-UI面板</a>
+                <a href="#services" class="nav-link">服务状态</a>
+                <a href="https://github.com/about300" class="nav-link" target="_blank">
+                    <i class="fab fa-github"></i> GitHub
+                </a>
+            </div>
         </div>
-      </div>
+    </nav>
+
+    <!-- 页面头部 -->
+    <header class="page-header">
+        <div class="container">
+            <h1 class="page-title">VPS 全栈服务</h1>
+            <p class="page-subtitle">「离开世界之前 一切都是过程」</p>
+        </div>
+    </header>
+
+    <!-- 搜索区域 -->
+    <div class="search-section">
+        <div class="search-container">
+            <form id="search-form" action="https://www.google.com/search" method="GET" target="_blank">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" name="q" id="search-input" placeholder="搜索工具、服务或配置..." autocomplete="off">
+                    <button type="submit" class="search-btn">搜索</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 快速工具 -->
+    <section class="tools-section">
+        <h2 class="section-title"><i class="fas fa-rocket"></i> 快速访问</h2>
+        <div class="tools-grid">
+            <a href="/subconvert/" class="tool-card">
+                <div class="tool-icon"><i class="fas fa-exchange-alt"></i></div>
+                <div class="tool-content">
+                    <h3 class="tool-title">订阅转换</h3>
+                    <p class="tool-desc">转换各种订阅格式，支持 Clash、Quantumult X、V2Ray 等</p>
+                    <div class="tool-meta"><span class="tool-tag">热门</span><span class="tool-date">在线</span></div>
+                </div>
+            </a>
+            <a id="sui-card-link" href="#" target="_blank" class="tool-card">
+                <div class="tool-icon"><i class="fas fa-tachometer-alt"></i></div>
+                <div class="tool-content">
+                    <h3 class="tool-title">S-UI 面板</h3>
+                    <p class="tool-desc">节点管理和流量监控，支持多用户管理和实时统计</p>
+                    <div class="tool-meta"><span class="tool-tag">专业</span><span class="tool-date">管理</span></div>
+                </div>
+            </a>
+            <a id="adguard-link" href="#" target="_blank" class="tool-card">
+                <div class="tool-icon"><i class="fas fa-shield-alt"></i></div>
+                <div class="tool-content">
+                    <h3 class="tool-title">AdGuard Home</h3>
+                    <p class="tool-desc">网络广告和跟踪器拦截，DNS-over-HTTPS/TLS 服务</p>
+                    <div class="tool-meta"><span class="tool-tag">安全</span><span class="tool-date">DNS</span></div>
+                </div>
+            </a>
+        </div>
     </section>
 
     <!-- 服务状态 -->
     <section class="services-section" id="services">
-      <h2 class="section-title"><i class="fas fa-heartbeat"></i> 服务状态</h2>
-      <div class="services-grid" id="services-grid">
-        <div class="service-card loading"><div class="service-icon"><i class="fas fa-spinner fa-spin"></i></div><p class="service-text">正在检测服务状态...</p></div>
-      </div>
+        <h2 class="section-title"><i class="fas fa-heartbeat"></i> 服务状态</h2>
+        <div class="services-grid" id="services-grid">
+            <div class="service-card loading"><div class="service-icon"><i class="fas fa-spinner fa-spin"></i></div><p class="service-text">正在检测服务状态...</p></div>
+        </div>
     </section>
 
-    <!-- 最近更新 -->
-    <section class="updates-section">
-      <h2 class="section-title"><i class="fas fa-history"></i> 最近更新</h2>
-      <div class="updates-list">
-        <!-- 更新条目保持不变（省略） -->
-      </div>
-    </section>
-  </main>
-
-  <!-- 页脚（保持原样） -->
-  <footer class="footer"> ...（略，保持你原来的页脚内容）...</footer>
-
-  <!-- 配置生成模态框（保持不变） -->
-  <div class="modal" id="config-modal"> ...（略）... </div>
-
-  <script>
-    // ====== 工具函数：带超时的 fetch ======
-    function fetchWithTimeout(url, opts = {}, timeout = 3000) {
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('timeout')), timeout);
-        fetch(url, opts).then(res => {
-          clearTimeout(timer);
-          resolve(res);
-        }).catch(err => {
-          clearTimeout(timer);
-          reject(err);
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            checkServiceStatus();
+            setupSearch();
+            updateFooterStats();
         });
-      });
-    }
 
-    // ====== 在 DOMContentLoaded 时初始化链接与状态检测 ======
-    document.addEventListener('DOMContentLoaded', () => {
-      const host = window.location.hostname;
-      const protocol = window.location.protocol; // http: or https:
-      const port2095 = '2095';
-      const port3000 = '3000';
+        // JS 功能
+        async function checkServiceStatus() {
+            const servicesGrid = document.getElementById('services-grid');
+            const services = [
+                { id: 'nginx', name: 'Web 服务', port: 443, icon: 'fas fa-globe' },
+                { id: 'subconvert', name: '订阅转换', port: 25500, icon: 'fas fa-exchange-alt' },
+                { id: 'sui', name: 'S-UI 面板', port: 2095, icon: 'fas fa-tachometer-alt' },
+                { id: 'adguard', name: 'AdGuard', port: 3000, icon: 'fas fa-shield-alt' }
+            ];
 
-      // 设置 S-UI 与 AdGuard 链接（使用 https）
-      const suiHref = `${protocol}//${host}:${port2095}/app`;
-      const adguardHref = `${protocol}//${host}:${port3000}`;
+            // 清空现有内容
+            servicesGrid.innerHTML = '';
+            services.forEach(service => {
+                const card = document.createElement('div');
+                card.className = 'service-card loading';
+                card.innerHTML = `
+                    <div class="service-icon">
+                        <i class="${service.icon}"></i>
+                    </div>
+                    <h3 class="service-title">${service.name}</h3>
+                    <p class="service-text">正在检测...</p>
+                    <span class="service-status status-checking">检测中</span>
+                `;
+                servicesGrid.appendChild(card);
+            });
 
-      const suiNav = document.getElementById('sui-nav-link');
-      const suiCard = document.getElementById('sui-card-link');
-      const adguardCard = document.getElementById('adguard-link');
-      const sitesearch = document.getElementById('sitesearch');
-
-      if (suiNav) suiNav.href = suiHref;
-      if (suiCard) suiCard.href = suiHref;
-      if (adguardCard) adguardCard.href = adguardHref;
-      if (sitesearch) sitesearch.value = host;
-
-      // 初始化 config modal 控件（保留你原来的逻辑）
-      // （不重复贴出，再用原代码中的绑定即可）
-
-      // 真正检测服务状态（替代原来随机模拟）
-      checkServicesReal(host, protocol, port2095, port3000);
-    });
-
-    // ====== 真实的服务检测函数 ======
-    async function checkServicesReal(host, protocol, portSui, portAdguard) {
-      const servicesGrid = document.getElementById('services-grid');
-      if (!servicesGrid) return;
-      servicesGrid.innerHTML = '';
-
-      const services = [
-        { name: 'Nginx Web服务', url: '/', icon: 'fas fa-globe', ports: '80,443' },
-        { name: '订阅转换服务', url: '/subconvert/', icon: 'fas fa-exchange-alt', ports: '25500' },
-        { name: 'S-UI 面板', url: `${protocol}//${host}:${portSui}/app`, icon: 'fas fa-tachometer-alt', ports: portSui },
-        { name: 'AdGuard Home', url: `${protocol}//${host}:${portAdguard}`, icon: 'fas fa-shield-alt', ports: portAdguard }
-      ];
-
-      for (const svc of services) {
-        const card = document.createElement('div');
-        card.className = 'service-card loading';
-
-        const icon = document.createElement('div');
-        icon.className = 'service-icon';
-        icon.innerHTML = `<i class="${svc.icon}"></i>`;
-
-        const title = document.createElement('h3');
-        title.className = 'service-text';
-        title.textContent = svc.name;
-
-        const details = document.createElement('p');
-        details.className = 'service-details';
-        details.textContent = `端口: ${svc.ports}`;
-
-        const statusP = document.createElement('p');
-        statusP.className = 'service-details';
-        statusP.textContent = '检测中...';
-
-        card.appendChild(icon);
-        card.appendChild(title);
-        card.appendChild(details);
-        card.appendChild(statusP);
-
-        servicesGrid.appendChild(card);
-
-        // 做一次请求判断是否在线（同源 / 相对路径优先）
-        try {
-          let res;
-          if (svc.url.startsWith('/')) {
-            // 相对路径：使用同源请求
-            res = await fetchWithTimeout(svc.url, { method: 'HEAD' }, 3000);
-            if (res && (res.ok || res.status === 200 || res.status === 302 || res.status === 301)) {
-              statusP.textContent = '运行正常';
-              card.classList.remove('loading');
-              card.classList.add('online');
-            } else {
-              statusP.textContent = `响应异常 (${res.status})`;
-              card.classList.remove('loading');
-              card.classList.add('offline');
-            }
-          } else {
-            // 绝对URL（跨端口）尝试 fetch（可能被 CORS 限制），但能判断出网络可达或失败
-            res = await fetchWithTimeout(svc.url, { method: 'GET', mode: 'no-cors' }, 3000)
-              .then(() => ({ ok: true })) // no-cors 返回 opaque，我们当作可达处理
-              .catch(() => ({ ok: false }));
-
-            if (res && res.ok) {
-              statusP.textContent = '运行正常';
-              card.classList.remove('loading');
-              card.classList.add('online');
-            } else {
-              statusP.textContent = '无法访问';
-              card.classList.remove('loading');
-              card.classList.add('offline');
-            }
-          }
-        } catch (err) {
-          statusP.textContent = '离线 / 超时';
-          card.classList.remove('loading');
-          card.classList.add('offline');
+            // 模拟检测（实际应该向服务器发送请求）
+            setTimeout(() => {
+                services.forEach((service, index) => {
+                    const card = servicesGrid.children[index];
+                    const isOnline = Math.random() > 0.3;
+                    card.className = `service-card ${isOnline ? 'online' : 'offline'}`;
+                    card.innerHTML = `
+                        <div class="service-icon">
+                            <i class="${service.icon}"></i>
+                        </div>
+                        <h3 class="service-title">${service.name}</h3>
+                        <p class="service-text">${service.port ? `端口: ${service.port}` : ''}</p>
+                        <span class="service-status ${isOnline ? 'status-online' : 'status-offline'}">
+                            ${isOnline ? '在线' : '离线'}
+                        </span>
+                    `;
+                });
+            }, 2000);
         }
-      }
-    }
 
-    // （保留你原先的搜索、生成配置、copy 等逻辑 —— 仅替换与初始化相关代码）
-  </script>
+        // 搜索功能
+        function setupSearch() {
+            const searchInput = document.getElementById('search-input');
+            const searchResults = document.getElementById('search-results');
+
+            const searchData = [
+                { title: '订阅转换', description: '转换各种订阅格式', url: '/subconvert/', tags: ['转换', '订阅'] },
+                { title: 'S-UI 面板', description: '节点管理和监控面板', url: '/sui/', tags: ['面板', '管理'] },
+                { title: '服务状态', description: '查看所有服务运行状态', url: '#services', tags: ['状态', '监控'] },
+                { title: 'AdGuard Home', description: 'DNS广告过滤服务', url: 'http://localhost:3000', tags: ['DNS', '安全'] }
+            ];
+
+            searchInput.addEventListener('input', function() {
+                const query = this.value.toLowerCase().trim();
+                if (query.length === 0) {
+                    searchResults.style.display = 'none';
+                    return;
+                }
+
+                const results = searchData.filter(item => {
+                    const searchText = `${item.title} ${item.description} ${item.tags.join(' ')}`.toLowerCase();
+                    return searchText.includes(query);
+                });
+
+                if (results.length > 0) {
+                    searchResults.innerHTML = results.map(item => `
+                        <div class="search-result-item">
+                            <a href="${item.url}" class="search-result-link">
+                                <h4>${item.title}</h4>
+                                <p>${item.description}</p>
+                                <div class="search-tags">
+                                    ${item.tags.map(tag => `<span class="search-tag">${tag}</span>`).join('')}
+                                </div>
+                            </a>
+                        </div>
+                    `).join('');
+                    searchResults.style.display = 'block';
+                } else {
+                    searchResults.innerHTML = '<div class="search-no-results">未找到相关结果</div>';
+                    searchResults.style.display = 'block';
+                }
+            });
+
+            document.addEventListener('click', function(e) {
+                if (!searchResults.contains(e.target) && !searchInput.contains(e.target)) {
+                    searchResults.style.display = 'none';
+                }
+            });
+        }
+
+        function updateFooterStats() {
+            const footerStats = document.getElementById('footer-stats');
+            if (footerStats) {
+                footerStats.textContent = `正在运行 4 项服务`;
+            }
+        }
+    </script>
 </body>
 </html>

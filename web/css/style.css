@@ -30,6 +30,9 @@ body {
     line-height: 1.6;
     color: var(--text-color);
     background: var(--bg-color);
+    background-size: cover;
+    background-position: center;
+    /* 背景图通过 JavaScript 动态加载 */
 }
 
 .container {
@@ -113,7 +116,7 @@ body {
 .page-header {
     padding: 4rem 0 2rem;
     text-align: center;
-    background: linear-gradient(135deg, var(--primary-color) 0%, #0056cc 100%);
+    background: none; /* 移除背景色 */
     color: white;
     margin-bottom: 2rem;
 }
@@ -200,6 +203,7 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
+    color: var(--primary-color); /* 加强标题字体的颜色 */
 }
 
 .section-title i {
@@ -354,13 +358,16 @@ body {
 .service-title {
     font-weight: 600;
     margin-bottom: 0.5rem;
+    color: var(--primary-color); /* 增强服务标题颜色 */
 }
 
 .service-status {
-    font-size: 0.9rem;
+    font-size: 1.1rem;
+    font-weight: 600;
     padding: 0.25rem 0.75rem;
     border-radius: 20px;
     display: inline-block;
+    color: var(--primary-color); /* 突出状态字体 */
 }
 
 .status-online {

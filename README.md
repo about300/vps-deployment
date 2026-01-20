@@ -75,4 +75,4 @@ server {
 
 **关于主页index的本地测试方法**
 
-手动打开https://cors-anywhere.herokuapp.com/corsdemo 此链接 之后 在index.sh 在vscode运行 可以看是否能正常获取bing的背景图
+手动打开 https://cors-anywhere.herokuapp.com/corsdemo 此链接 之后 在index.sh 在vscode运行 可以看是否能正常获取bing的背景图

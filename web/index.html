@@ -100,26 +100,17 @@
 
   <script>
     // 获取Bing的每日背景图并设置为页面背景
-    function setBackgroundImage() {
-      const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
-
-      if (isLocal) {
-        document.body.style.backgroundImage = 'url("/backgrounds/daily-background.jpg")'; // 本地图片路径
-      } else {
-        fetch('https://cors-anywhere.herokuapp.com/https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1')
-          .then(response => response.json())
-          .then(data => {
-            const imageUrl = "https://www.bing.com" + data.images[0].url;
-            document.body.style.backgroundImage = `url(${imageUrl})`;  // 设置动态背景图
-          })
-          .catch(error => {
-            console.log('无法获取背景图:', error);
-            document.body.style.backgroundImage = 'url("/backgrounds/daily-background.jpg")'; // 回退到本地图片
-          });
-      }
-    }
-
-    document.addEventListener('DOMContentLoaded', setBackgroundImage);
+    fetch('https://cors-anywhere.herokuapp.com/https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1')
+      .then(response => response.json())
+      .then(data => {
+        const imageUrl = "https://www.bing.com" + data.images[0].url;
+        document.body.style.backgroundImage = `url(${imageUrl})`;  // 设置动态背景图
+      })
+      .catch(error => {
+        console.log('无法获取背景图:', error);
+        // 如果失败，使用本地图像作为占位图
+        document.body.style.backgroundImage = 'url("path/to/local/background.jpg")';  // 替换为本地图片路径
+      });
 
     document.addEventListener('DOMContentLoaded', () => {
       const host = window.location.hostname || '127.0.0.1';
@@ -195,5 +186,6 @@
       }
     }
   </script>
+
 </body>
 </html>

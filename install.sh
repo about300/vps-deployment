@@ -69,9 +69,6 @@ fi
 export CF_Email
 export CF_Token
 
-# SubConverter 二进制下载链接
-# SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
-
 # Web主页GitHub仓库
 WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
 
@@ -136,7 +133,6 @@ fi
     --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
     --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
     --reloadcmd "systemctl reload nginx"
-
 
 # -----------------------------
 # 步骤 4：安装 SubConverter 后端（直接下载固定版本）
@@ -313,13 +309,11 @@ fi
 mkdir -p /opt/web-home/current/css
 mkdir -p /opt/web-home/current/js
 
-# 如果index.html存在，替换域名
-if [ -f "/opt/web-home/current/index.html" ]; then
-    echo "[INFO] 替换index.html中的域名和端口..."
-    sed -i "s|\\\${DOMAIN}|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|\\\$DOMAIN|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|\\\${VLESS_PORT}|$VLESS_PORT|g" /opt/web-home/current/index.html 2>/dev/null || true
-fi
+# 替换index.html中的背景图片路径
+echo "[INFO] 替换index.html中的背景图片路径..."
+cp /opt/web-home/current/index.html /opt/web-home/current/index.html.bak
+
+sed -i 's|url("background.jpg")|url("/assets/bing.jpg")|g' /opt/web-home/current/index.html
 
 # 设置文件权限
 chown -R www-data:www-data /opt/web-home/current

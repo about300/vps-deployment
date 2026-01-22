@@ -4,13 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VPS Dashboard - 全栈服务管理</title>
-  <meta name="description" content="「MY love😍小黎黎」">
+  <meta name="description" content="「离开世界之前 一切都是过程」">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Source+Sans+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-
   <!-- 导航栏 -->
   <nav class="navbar">
     <div class="container">
@@ -34,13 +33,12 @@
   <header class="page-header">
     <div class="container">
       <h1 class="page-title">VPS 全栈服务</h1>
-      <p class="page-subtitle">「MY love😍小黎黎」</p>
+      <p class="page-subtitle">「离开世界之前 一切都是过程」</p>
     </div>
   </header>
 
   <!-- 主要内容 -->
   <main class="container main-content">
-
     <!-- 搜索框 -->
     <div class="search-section">
       <div class="search-container">
@@ -95,8 +93,95 @@
         <div class="service-card loading"><div class="service-icon"><i class="fas fa-spinner fa-spin"></i></div><p class="service-text">正在检测服务状态...</p></div>
       </div>
     </section>
-
   </main>
 
+  <script>
+    // 获取Bing的每日背景图并设置为页面背景
+    fetch('https://cors-anywhere.herokuapp.com/https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1')
+      .then(response => response.json())
+      .then(data => {
+        const imageUrl = "https://www.bing.com" + data.images[0].url;
+        document.body.style.backgroundImage = `url(${imageUrl})`;  // 设置动态背景图
+      })
+      .catch(error => {
+        console.log('无法获取背景图:', error);
+        // 如果失败，使用本地图像作为占位图
+        document.body.style.backgroundImage = 'url("path/to/local/background.jpg")';  // 替换为本地图片路径
+      });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const host = window.location.hostname || '127.0.0.1';
+      const protocol = window.location.protocol === 'file:' ? 'http:' : window.location.protocol;
+
+      // 本地测试时，使用 localhost 或本地端口
+      const suiUrl = `${protocol}//${host}:2095/app`;
+      const adguardUrl = `${protocol}//${host}:3000`;
+
+      const suiNav = document.getElementById('sui-nav-link');
+      const suiCard = document.getElementById('sui-card-link');
+      const adguardCard = document.getElementById('adguard-link');
+
+      if (suiNav) suiNav.href = suiUrl; // 如果无法访问，链接将指向本地测试端口
+      if (suiCard) suiCard.href = suiUrl;
+      if (adguardCard) adguardCard.href = adguardUrl;
+
+      checkServices();
+    });
+
+    async function checkServices() {
+      const servicesGrid = document.getElementById('services-grid');
+      if (!servicesGrid) return;
+
+      const services = [
+        { name: 'Web 服务', url: '/', icon: 'fas fa-globe' },
+        { name: '订阅转换', url: '/subconvert/', icon: 'fas fa-exchange-alt' },
+        { name: 'S-UI 面板', url: '/sui/', icon: 'fas fa-tachometer-alt' },
+        { name: 'AdGuard Home', url: '/adguard/', icon: 'fas fa-shield-alt' }
+      ];
+
+      servicesGrid.innerHTML = '';
+
+      for (const svc of services) {
+        const card = document.createElement('div');
+        card.className = 'service-card loading';
+        const icon = document.createElement('div');
+        icon.className = 'service-icon';
+        icon.innerHTML = `<i class="${svc.icon}"></i>`;
+
+        const title = document.createElement('h3');
+        title.className = 'service-text';
+        title.textContent = svc.name;
+
+        const statusP = document.createElement('p');
+        statusP.className = 'service-details';
+        statusP.textContent = '检测中...';
+
+        card.appendChild(icon);
+        card.appendChild(title);
+        card.appendChild(statusP);
+        servicesGrid.appendChild(card);
+
+        // 做一次请求判断是否在线（同源 / 相对路径优先）
+        try {
+          let res;
+          res = await fetch(svc.url, { method: 'HEAD' });
+
+          if (res.ok || res.status === 200 || res.status === 302) {
+            statusP.textContent = '运行正常';
+            card.classList.remove('loading');
+            card.classList.add('online');
+          } else {
+            statusP.textContent = `响应异常 (${res.status})`;
+            card.classList.remove('loading');
+            card.classList.add('offline');
+          }
+        } catch (err) {
+          statusP.textContent = '离线 / 超时';
+          card.classList.remove('loading');
+          card.classList.add('offline');
+        }
+      }
+    }
+  </script>
 </body>
 </html>

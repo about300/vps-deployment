@@ -3,17 +3,17 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v5.0.0 (更新版)
+# Version: v4.9.3 (终极源码修复版)
 # Author: Auto-generated
 # Description: 基于源码修复的终极解决方案，彻底解决路径冲突问题
 ##############################
 
-echo "===== VPS 全栈部署（终极源码修复版）v5.0.0 ====="
+echo "===== VPS 全栈部署（终极源码修复版）v4.9.3 ====="
 
 # -----------------------------
 # 版本信息
 # -----------------------------
-SCRIPT_VERSION="5.0.0"
+SCRIPT_VERSION="4.9.3"
 echo "版本: v${SCRIPT_VERSION}"
 echo "更新: 基于源码修复方案，彻底解决Sub-Web与主站CSS/JS路径冲突"
 echo "说明: 使用已修复的sub-web-modify仓库，无需部署时修正"
@@ -68,6 +68,9 @@ fi
 
 export CF_Email
 export CF_Token
+
+# SubConverter 二进制下载链接
+# SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
 
 # Web主页GitHub仓库
 WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
@@ -133,6 +136,7 @@ fi
     --key-file /etc/nginx/ssl/$DOMAIN/key.pem \
     --fullchain-file /etc/nginx/ssl/$DOMAIN/fullchain.pem \
     --reloadcmd "systemctl reload nginx"
+
 
 # -----------------------------
 # 步骤 4：安装 SubConverter 后端（直接下载固定版本）
@@ -309,11 +313,13 @@ fi
 mkdir -p /opt/web-home/current/css
 mkdir -p /opt/web-home/current/js
 
-# 替换index.html中的背景图片路径
-echo "[INFO] 替换index.html中的背景图片路径..."
-cp /opt/web-home/current/index.html /opt/web-home/current/index.html.bak
-
-sed -i 's|url("background.jpg")|url("/assets/bing.jpg")|g' /opt/web-home/current/index.html
+# 如果index.html存在，替换域名
+if [ -f "/opt/web-home/current/index.html" ]; then
+    echo "[INFO] 替换index.html中的域名和端口..."
+    sed -i "s|\\\${DOMAIN}|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
+    sed -i "s|\\\$DOMAIN|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
+    sed -i "s|\\\${VLESS_PORT}|$VLESS_PORT|g" /opt/web-home/current/index.html 2>/dev/null || true
+fi
 
 # 设置文件权限
 chown -R www-data:www-data /opt/web-home/current

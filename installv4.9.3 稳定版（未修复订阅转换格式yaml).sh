@@ -69,9 +69,6 @@ fi
 export CF_Email
 export CF_Token
 
-# SubConverter 二进制下载链接
-SUBCONVERTER_BIN="https://github.com/about300/vps-deployment/raw/refs/heads/main/bin/subconverter"
-
 # Web主页GitHub仓库
 WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
 
@@ -138,15 +135,24 @@ fi
     --reloadcmd "systemctl reload nginx"
 
 # -----------------------------
-# 步骤 4：安装 SubConverter 后端（使用3.4版本配置）
+# 步骤 4：安装 SubConverter 后端（直接下载固定版本）
 # -----------------------------
 echo "[4/12] 安装 SubConverter 后端"
 mkdir -p /opt/subconverter
-if [ ! -f "/opt/subconverter/subconverter" ]; then
-    echo "[INFO] 下载 subconverter..."
-    wget -O /opt/subconverter/subconverter $SUBCONVERTER_BIN
-    chmod +x /opt/subconverter/subconverter
-fi
+
+# 直接下载 SubConverter 固定版本 (v0.9.2)
+DOWNLOAD_URL="https://github.com/MetaCubeX/subconverter/releases/download/v0.9.2/subconverter_linux64.tar.gz"
+
+echo "[INFO] 下载 SubConverter 二进制文件..."
+wget -O /opt/subconverter/subconverter.tar.gz "$DOWNLOAD_URL"
+
+# 解压 SubConverter 文件并去除文件夹结构
+echo "[INFO] 解压 SubConverter..."
+tar -zxvf /opt/subconverter/subconverter.tar.gz -C /opt/subconverter --strip-components=1
+rm -f /opt/subconverter/subconverter.tar.gz  # 删除压缩包
+
+# 确保二进制文件可执行
+chmod +x /opt/subconverter/subconverter
 
 # 创建 subconverter.env 配置文件（使用3.4版本配置）
 echo "[INFO] 创建 subconverter.env 配置文件"
@@ -303,13 +309,11 @@ fi
 mkdir -p /opt/web-home/current/css
 mkdir -p /opt/web-home/current/js
 
-# 如果index.html存在，替换域名
-if [ -f "/opt/web-home/current/index.html" ]; then
-    echo "[INFO] 替换index.html中的域名和端口..."
-    sed -i "s|\\\${DOMAIN}|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|\\\$DOMAIN|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|\\\${VLESS_PORT}|$VLESS_PORT|g" /opt/web-home/current/index.html 2>/dev/null || true
-fi
+# 替换index.html中的背景图片路径
+echo "[INFO] 替换index.html中的背景图片路径..."
+cp /opt/web-home/current/index.html /opt/web-home/current/index.html.bak
+
+sed -i 's|url("background.jpg")|url("/assets/bing.jpg")|g' /opt/web-home/current/index.html
 
 # 设置文件权限
 chown -R www-data:www-data /opt/web-home/current

@@ -1,216 +1,174 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>VPS Dashboard - 全栈服务管理</title>
-  <meta name="description" content="「黎黎love鹏鹏」" />
-  <link rel="stylesheet" href="css/style.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Source+Sans+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
-  <style>
-    /* 小覆盖：保证背景显示（不改原有 style.css） */
-    html,body { height:100%; }
-    body {
-      background-color: #ffffff; /* 后备色 */
-      background-repeat: no-repeat;
-      background-position: center center;
-      background-size: cover;
-      transition: background-image .6s ease, background-color .6s ease;
-      min-height: 100vh;
-    }
-    /* 可选：给页面加一个轻微遮罩，提高文字可读性 */
-    .bg-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.28); /* 可调整透明度 */
-      pointer-events: none;
-      z-index: 0;
-    }
-    /* 内容要置于 overlay 之上 */
-    .page-content { position: relative; z-index: 2; }
-    /* 去掉原先 page-header 的强蓝渐变（如果你希望彻底去掉顶部蓝色） */
-    .page-header {
-      background: transparent !important;
-      color: #fff !important;
-      padding-top: 3rem;
-      padding-bottom: 2rem;
-    }
-    /* 如果你想要头部文字更显眼，可在这里改 */
-    .page-title, .page-subtitle { text-shadow: 0 2px 12px rgba(0,0,0,0.45); }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VPS 控制台</title>
+
+<style>
+:root {
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --text-color: #222;
+  --blur: blur(14px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
+  color: var(--text-color);
+}
+
+body {
+  background:
+    linear-gradient(120deg, #667eea, #764ba2);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+#bg-mask {
+  position: fixed;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  z-index: -1;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  background: var(--card-bg);
+  backdrop-filter: var(--blur);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.15);
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 18px;
+}
+
+.links a {
+  display: block;
+  margin: 8px 0;
+  color: #3366ff;
+  text-decoration: none;
+}
+
+.links a:hover {
+  text-decoration: underline;
+}
+
+/* 搜索 */
+.search-box {
+  margin: 30px auto;
+  max-width: 600px;
+  display: flex;
+}
+
+.search-box input {
+  flex: 1;
+  padding: 14px;
+  border-radius: 30px 0 0 30px;
+  border: none;
+  outline: none;
+  font-size: 16px;
+}
+
+.search-box button {
+  padding: 14px 24px;
+  border-radius: 0 30px 30px 0;
+  border: none;
+  background: #4f7cff;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.search-box button:hover {
+  background: #3a63d8;
+}
+</style>
 </head>
+
 <body>
-  <div class="bg-overlay" aria-hidden="true"></div>
 
-  <div class="page-content">
-    <!-- 导航栏 -->
-    <nav class="navbar">
-      <div class="container">
-        <div class="nav-brand">
-          <i class="fas fa-server"></i>
-          <a href="/">VPS Dashboard</a>
-        </div>
-        <div class="nav-menu">
-          <a href="/" class="nav-link active">首页</a>
-          <a href="/subconvert/" class="nav-link">订阅转换</a>
-          <a id="sui-nav-link" href="#" class="nav-link" target="_blank">S-UI面板</a>
-          <a href="#services" class="nav-link">服务状态</a>
-          <a href="https://github.com/about300" class="nav-link" target="_blank"><i class="fab fa-github"></i> GitHub</a>
-        </div>
+<div id="bg-mask"></div>
+
+<div class="container">
+  <h1>VPS 控制台</h1>
+
+  <!-- 搜索 -->
+  <form class="search-box" action="https://www.bing.com/search" method="get" target="_blank">
+    <input type="text" name="q" placeholder="使用 Bing 搜索…" />
+    <button type="submit">搜索</button>
+  </form>
+
+  <div class="grid">
+    <div class="card">
+      <h2>服务入口</h2>
+      <div class="links">
+        <a href="/subconvert/" target="_blank">订阅转换前端</a>
+        <a href="/sub/api/" target="_blank">SubConverter API</a>
+        <a href="https://{{DOMAIN}}:2095" target="_blank">S-UI 面板</a>
+        <a href="https://{{DOMAIN}}:3000" target="_blank">AdGuard Home</a>
       </div>
-    </nav>
+    </div>
 
-    <!-- 头部 -->
-    <header class="page-header">
-      <div class="container">
-        <h1 class="page-title">黎黎的服务</h1>
-        <p class="page-subtitle">「黎黎love鹏鹏」</p>
-      </div>
-    </header>
-
-    <!-- 主要内容 -->
-    <main class="container main-content">
-      <!-- 搜索 -->
-      <div class="search-section">
-        <div class="search-container">
-          <form id="search-form" action="https://www.google.com/search" method="GET" target="_blank">
-            <div class="search-box">
-              <i class="fas fa-search"></i>
-              <input type="text" name="q" id="search-input" placeholder="搜索工具、服务或配置..." autocomplete="off">
-              <button type="submit" class="search-btn">搜索</button>
-            </div>
-          </form>
-          <div class="search-results" id="search-results"></div>
-        </div>
-      </div>
-
-      <!-- 快速工具 -->
-      <section class="tools-section">
-        <h2 class="section-title"><i class="fas fa-rocket"></i> 快速访问</h2>
-        <div class="tools-grid">
-          <a href="/subconvert/" class="tool-card">
-            <div class="tool-icon"><i class="fas fa-exchange-alt"></i></div>
-            <div class="tool-content">
-              <h3 class="tool-title">订阅转换</h3>
-              <p class="tool-desc">转换各种订阅格式，支持 Clash、Quantumult X、V2Ray 等</p>
-            </div>
-          </a>
-
-          <a id="sui-card-link" href="#" target="_blank" class="tool-card">
-            <div class="tool-icon"><i class="fas fa-tachometer-alt"></i></div>
-            <div class="tool-content">
-              <h3 class="tool-title">S-UI 面板</h3>
-              <p class="tool-desc">节点管理和流量监控，支持多用户管理和实时统计</p>
-            </div>
-          </a>
-
-          <a id="adguard-link" href="#" target="_blank" class="tool-card">
-            <div class="tool-icon"><i class="fas fa-shield-alt"></i></div>
-            <div class="tool-content">
-              <h3 class="tool-title">AdGuard Home</h3>
-              <p class="tool-desc">网络广告和跟踪器拦截，DNS-over-HTTPS/TLS 服务</p>
-            </div>
-          </a>
-        </div>
-      </section>
-
-      <!-- 服务状态 -->
-      <section class="services-section" id="services">
-        <h2 class="section-title"><i class="fas fa-heartbeat"></i> 服务状态</h2>
-        <div class="services-grid" id="services-grid">
-          <div class="service-card loading"><div class="service-icon"><i class="fas fa-spinner fa-spin"></i></div><p class="service-text">正在检测服务状态...</p></div>
-        </div>
-      </section>
-    </main>
+    <div class="card">
+      <h2>说明</h2>
+      <p>
+        • 背景来自 Bing 每日壁纸<br>
+        • 若无法访问 Bing，自动回退渐变背景<br>
+        • 本地 / 服务器表现一致
+      </p>
+    </div>
   </div>
+</div>
 
-  <script>
-    // ====== 背景加载策略（本地优先，失败再走代理请求 Bing） ======
-    (function() {
-      const localPath = '/assets/bing.jpg'; // 本地项目内优先使用这个（Live Server / Nginx 都可）
-      const fallbackLocal = '/assets/local_background.jpg'; // 备用本地图（可选）
-      const bingJsonViaAllOrigins = 'https://api.allorigins.win/raw?url=https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1';
-      const bingBase = 'https://www.bing.com';
+<script>
+(async function loadBingBg() {
+  try {
+    const res = await fetch(
+      "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1"
+    );
+    const data = await res.json();
 
-      function setBodyBackground(url) {
-        if (!url) return;
-        // apply with a tiny preloader image to avoid flashing
-        const img = new Image();
-        img.onload = () => {
-          document.body.style.backgroundImage = `url("${url}")`;
-        };
-        img.onerror = () => {
-          console.warn('背景图加载失败：', url);
-        };
-        img.src = url;
-      }
+    if (!data.images || !data.images[0].url) {
+      throw new Error("Bing 返回数据异常");
+    }
 
-      // 1) 检查本地项目图片（相对路径）是否可用
-      (function tryLocalFirst() {
-        const img = new Image();
-        img.onload = () => setBodyBackground(localPath);
-        img.onerror = () => {
-          // 本地没有，尝试备用本地
-          const img2 = new Image();
-          img2.onload = () => setBodyBackground(fallbackLocal);
-          img2.onerror = () => {
-            // 都没有 -> 通过代理请求 Bing JSON
-            fetchBingViaProxy();
-          };
-          img2.src = fallbackLocal;
-        };
-        img.src = localPath;
-      })();
+    const imgUrl = "https://www.bing.com" + data.images[0].url;
+    document.getElementById("bg-mask").style.backgroundImage =
+      `url('${imgUrl}')`;
 
-      // 2) 通过公共代理获取 Bing JSON（allorigins）
-      function fetchBingViaProxy() {
-        fetch(bingJsonViaAllOrigins, { cache: "no-cache" })
-          .then(res => {
-            if (!res.ok) throw new Error('代理请求失败');
-            return res.json();
-          })
-          .then(data => {
-            if (data && data.images && data.images[0] && data.images[0].url) {
-              const url = bingBase + data.images[0].url;
-              setBodyBackground(url);
-            } else {
-              throw new Error('Bing 返回数据格式异常');
-            }
-          })
-          .catch(err => {
-            console.warn('无法从 Bing 获取背景图，已回退到渐变背景：', err);
-            // 回退：渐变色（不会导致页面空白）
-            document.body.style.backgroundImage = '';
-            document.body.style.backgroundColor = 'linear-gradient(135deg,#f6f8fa,#e9eefc)'; // 可改
-          });
-      }
-    })();
+  } catch (e) {
+    console.warn("Bing 背景加载失败，使用渐变背景", e);
+  }
+})();
+</script>
 
-    // ====== 其余初始化（不改动你现有逻辑） ======
-    document.addEventListener('DOMContentLoaded', () => {
-      const host = window.location.hostname || '127.0.0.1';
-      const protocol = window.location.protocol === 'file:' ? 'http:' : window.location.protocol;
-
-      const suiUrl = `${protocol}//${host}:2095/app`;
-      const adguardUrl = `${protocol}//${host}:3000`;
-
-      const suiNav = document.getElementById('sui-nav-link');
-      const suiCard = document.getElementById('sui-card-link');
-      const adguardCard = document.getElementById('adguard-link');
-
-      if (suiNav) suiNav.href = suiUrl;
-      if (suiCard) suiCard.href = suiUrl;
-      if (adguardCard) adguardCard.href = adguardUrl;
-
-      // 触发服务检测函数（假定页面上有实现 checkServices()）
-      if (typeof checkServices === 'function') {
-        checkServices();
-      }
-    });
-  </script>
-
-  <!-- 你的原有脚本可以保持不动（如果把 checkServices 写在别的文件里） -->
-  <script src="js/main.js"></script>
 </body>
 </html>

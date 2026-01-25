@@ -1,174 +1,173 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>VPS 控制台</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VPS Dashboard</title>
 
-<style>
-:root {
-  --card-bg: rgba(255, 255, 255, 0.85);
-  --text-color: #222;
-  --blur: blur(14px);
-}
+  <meta name="description" content="黎黎love鹏鹏" />
 
-* {
-  box-sizing: border-box;
-}
+  <!-- 原有样式，不改 -->
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
-  color: var(--text-color);
-}
-
-body {
-  background:
-    linear-gradient(120deg, #667eea, #764ba2);
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-}
-
-#bg-mask {
-  position: fixed;
-  inset: 0;
-  background-size: cover;
-  background-position: center;
-  z-index: -1;
-}
-
-.container {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 40px 20px;
-}
-
-h1 {
-  text-align: center;
-  margin-bottom: 30px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px;
-}
-
-.card {
-  background: var(--card-bg);
-  backdrop-filter: var(--blur);
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 10px 30px rgba(0,0,0,.15);
-}
-
-.card h2 {
-  margin-top: 0;
-  font-size: 18px;
-}
-
-.links a {
-  display: block;
-  margin: 8px 0;
-  color: #3366ff;
-  text-decoration: none;
-}
-
-.links a:hover {
-  text-decoration: underline;
-}
-
-/* 搜索 */
-.search-box {
-  margin: 30px auto;
-  max-width: 600px;
-  display: flex;
-}
-
-.search-box input {
-  flex: 1;
-  padding: 14px;
-  border-radius: 30px 0 0 30px;
-  border: none;
-  outline: none;
-  font-size: 16px;
-}
-
-.search-box button {
-  padding: 14px 24px;
-  border-radius: 0 30px 30px 0;
-  border: none;
-  background: #4f7cff;
-  color: #fff;
-  font-size: 16px;
-  cursor: pointer;
-}
-
-.search-box button:hover {
-  background: #3a63d8;
-}
-</style>
+  <!-- 强制非暗黑模式 + Bing 背景 -->
+  <style>
+    html, body {
+      color: #222;
+      background: url("/assets/bing.jpg") no-repeat center center fixed;
+      background-size: cover;
+    }
+  </style>
 </head>
 
 <body>
 
-<div id="bg-mask"></div>
-
-<div class="container">
-  <h1>VPS 控制台</h1>
-
-  <!-- 搜索 -->
-  <form class="search-box" action="https://www.bing.com/search" method="get" target="_blank">
-    <input type="text" name="q" placeholder="使用 Bing 搜索…" />
-    <button type="submit">搜索</button>
-  </form>
-
-  <div class="grid">
-    <div class="card">
-      <h2>服务入口</h2>
-      <div class="links">
-        <a href="/subconvert/" target="_blank">订阅转换前端</a>
-        <a href="/sub/api/" target="_blank">SubConverter API</a>
-        <a href="https://{{DOMAIN}}:2095" target="_blank">S-UI 面板</a>
-        <a href="https://{{DOMAIN}}:3000" target="_blank">AdGuard Home</a>
+  <!-- ================= 顶部导航 ================= -->
+  <nav class="navbar">
+    <div class="container">
+      <div class="nav-brand">
+        <i class="fas fa-server"></i>
+        <a href="/">VPS Dashboard</a>
+      </div>
+      <div class="nav-menu">
+        <a href="/" class="nav-link active">首页</a>
+        <a href="/subconvert/" class="nav-link">订阅转换</a>
+        <a id="sui-link" href="#" class="nav-link" target="_blank">S-UI 面板</a>
+        <a href="#services" class="nav-link">服务状态</a>
+        <a href="https://github.com/about300" class="nav-link" target="_blank">
+          <i class="fab fa-github"></i>
+        </a>
       </div>
     </div>
+  </nav>
 
-    <div class="card">
-      <h2>说明</h2>
-      <p>
-        • 背景来自 Bing 每日壁纸<br>
-        • 若无法访问 Bing，自动回退渐变背景<br>
-        • 本地 / 服务器表现一致
-      </p>
+  <!-- ================= 头部 ================= -->
+  <header class="page-header">
+    <div class="container">
+      <h1 class="page-title">黎黎的服务</h1>
+      <p class="page-subtitle">「黎黎love鹏鹏」</p>
     </div>
-  </div>
-</div>
+  </header>
 
-<script>
-(async function loadBingBg() {
-  try {
-    const res = await fetch(
-      "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1"
-    );
-    const data = await res.json();
+  <!-- ================= 主体 ================= -->
+  <main class="container main-content">
 
-    if (!data.images || !data.images[0].url) {
-      throw new Error("Bing 返回数据异常");
-    }
+    <!-- 搜索（完整保留） -->
+    <section class="search-section">
+      <form action="https://www.bing.com/search" method="GET" target="_blank">
+        <div class="search-box">
+          <i class="fas fa-search"></i>
+          <input type="text" name="q" placeholder="搜索工具 / 服务 / 配置" />
+          <button type="submit">搜索</button>
+        </div>
+      </form>
+    </section>
 
-    const imgUrl = "https://www.bing.com" + data.images[0].url;
-    document.getElementById("bg-mask").style.backgroundImage =
-      `url('${imgUrl}')`;
+    <!-- 快捷入口（完整卡片） -->
+    <section class="tools-section">
+      <h2 class="section-title">
+        <i class="fas fa-rocket"></i> 快速访问
+      </h2>
 
-  } catch (e) {
-    console.warn("Bing 背景加载失败，使用渐变背景", e);
-  }
-})();
-</script>
+      <div class="tools-grid">
 
+        <a href="/subconvert/" class="tool-card">
+          <div class="tool-icon"><i class="fas fa-exchange-alt"></i></div>
+          <div class="tool-content">
+            <h3>订阅转换</h3>
+            <p>仅内部 API 调用，不依赖公网访问</p>
+          </div>
+        </a>
+
+        <a id="sui-card" href="#" class="tool-card" target="_blank">
+          <div class="tool-icon"><i class="fas fa-gauge-high"></i></div>
+          <div class="tool-content">
+            <h3>S-UI 面板</h3>
+            <p>节点 / 流量 / 用户管理</p>
+          </div>
+        </a>
+
+        <a id="adguard-card" href="#" class="tool-card" target="_blank">
+          <div class="tool-icon"><i class="fas fa-shield-halved"></i></div>
+          <div class="tool-content">
+            <h3>AdGuard Home</h3>
+            <p>DNS 去广告与防追踪</p>
+          </div>
+        </a>
+
+      </div>
+    </section>
+
+    <!-- 服务状态 -->
+    <section class="services-section" id="services">
+      <h2 class="section-title">
+        <i class="fas fa-heartbeat"></i> 服务状态
+      </h2>
+      <div class="services-grid" id="services-grid"></div>
+    </section>
+
+  </main>
+
+  <!-- ================= JS ================= -->
+  <script>
+    const protocol = location.protocol === 'file:' ? 'http:' : location.protocol;
+    const host = location.hostname;
+
+    // v4.9.3 联动（不显示端口）
+    const SUI_URL = protocol + '//' + host + '/app';
+    const ADGUARD_URL = protocol + '//' + host + '/adguard/';
+
+    document.getElementById('sui-link').href = SUI_URL;
+    document.getElementById('sui-card').href = SUI_URL;
+    document.getElementById('adguard-card').href = ADGUARD_URL;
+
+    /* ========= 服务检测（内部 API 版） ========= */
+    const services = [
+      {
+        name: '订阅转换',
+        icon: 'fa-exchange-alt',
+        check: '/subconvert/version'
+      },
+      {
+        name: 'S-UI',
+        icon: 'fa-gauge-high',
+        check: '/app/'
+      },
+      {
+        name: 'AdGuard Home',
+        icon: 'fa-shield-halved',
+        check: '/adguard/'
+      }
+    ];
+
+    const grid = document.getElementById('services-grid');
+
+    services.forEach(s => {
+      const card = document.createElement('div');
+      card.className = 'service-card loading';
+      card.innerHTML = `
+        <div class="service-icon"><i class="fas ${s.icon}"></i></div>
+        <p>${s.name}</p>
+        <span>检测中…</span>
+      `;
+      grid.appendChild(card);
+
+      fetch(s.check)
+        .then(r => {
+          card.classList.remove('loading');
+          card.classList.add(r.ok ? 'online' : 'offline');
+          card.querySelector('span').textContent = r.ok ? '在线' : '离线';
+        })
+        .catch(() => {
+          card.classList.remove('loading');
+          card.classList.add('offline');
+          card.querySelector('span').textContent = '离线';
+        });
+    });
+  </script>
+
+  <script src="js/main.js"></script>
 </body>
 </html>

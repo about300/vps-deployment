@@ -12,12 +12,35 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-  <!-- 强制非暗黑模式 + Bing 背景 -->
+  <!-- ===== 背景 & 优化层（仅 index 内部）===== -->
   <style>
     html, body {
       color: #222;
       background: url("/assets/bing.jpg") no-repeat center center fixed;
       background-size: cover;
+    }
+
+    /* 背景暗层（不是暗黑模式） */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.28);
+      z-index: -1;
+    }
+
+    /* 移动端 Bing 裁剪优化 */
+    @media (max-width: 768px) {
+      html, body {
+        background-position: center top;
+      }
+    }
+
+    /* 强制隐藏任何端口显示（双保险） */
+    .service-port,
+    .port,
+    .service-card small {
+      display: none !important;
     }
   </style>
 </head>
@@ -54,7 +77,7 @@
   <!-- ================= 主体 ================= -->
   <main class="container main-content">
 
-    <!-- 搜索（完整保留） -->
+    <!-- 搜索 -->
     <section class="search-section">
       <form action="https://www.bing.com/search" method="GET" target="_blank">
         <div class="search-box">
@@ -65,14 +88,13 @@
       </form>
     </section>
 
-    <!-- 快捷入口（完整卡片） -->
+    <!-- 快捷入口 -->
     <section class="tools-section">
       <h2 class="section-title">
         <i class="fas fa-rocket"></i> 快速访问
       </h2>
 
       <div class="tools-grid">
-
         <a href="/subconvert/" class="tool-card">
           <div class="tool-icon"><i class="fas fa-exchange-alt"></i></div>
           <div class="tool-content">
@@ -96,7 +118,6 @@
             <p>DNS 去广告与防追踪</p>
           </div>
         </a>
-
       </div>
     </section>
 
@@ -115,7 +136,6 @@
     const protocol = location.protocol === 'file:' ? 'http:' : location.protocol;
     const host = location.hostname;
 
-    // v4.9.3 联动（不显示端口）
     const SUI_URL = protocol + '//' + host + '/app';
     const ADGUARD_URL = protocol + '//' + host + '/adguard/';
 
@@ -123,23 +143,11 @@
     document.getElementById('sui-card').href = SUI_URL;
     document.getElementById('adguard-card').href = ADGUARD_URL;
 
-    /* ========= 服务检测（内部 API 版） ========= */
+    /* 服务检测（不显示端口） */
     const services = [
-      {
-        name: '订阅转换',
-        icon: 'fa-exchange-alt',
-        check: '/subconvert/version'
-      },
-      {
-        name: 'S-UI',
-        icon: 'fa-gauge-high',
-        check: '/app/'
-      },
-      {
-        name: 'AdGuard Home',
-        icon: 'fa-shield-halved',
-        check: '/adguard/'
-      }
+      { name: '订阅转换', icon: 'fa-exchange-alt', check: '/subconvert/version' },
+      { name: 'S-UI', icon: 'fa-gauge-high', check: '/app/' },
+      { name: 'AdGuard Home', icon: 'fa-shield-halved', check: '/adguard/' }
     ];
 
     const grid = document.getElementById('services-grid');

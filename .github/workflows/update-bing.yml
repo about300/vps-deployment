@@ -2,8 +2,11 @@ name: Update Bing Background
 
 on:
   schedule:
-    - cron: "0 0 * * *"   # 每天 UTC 0 点
+    - cron: "0 1 * * *"   # 每天 01:00 UTC（国内早上）
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   update-bing:
@@ -12,34 +15,23 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: false   # ★关键：关闭默认 token
 
-      - name: Fetch Bing image info
+      - name: Create assets directory
         run: |
-          curl -s "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1" > bing.json
-
-      - name: Download Bing image
-        run: |
-          IMG_URL=$(cat bing.json | jq -r '.images[0].url')
-          FULL_URL="https://www.bing.com${IMG_URL}"
           mkdir -p assets
-          curl -L "$FULL_URL" -o assets/bing.jpg
 
-      - name: Commit and push updated image
-        env:
-          GH_TOKEN: ${{ secrets.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 }}   # ★关键：用你的 PAT
+      - name: Download Bing wallpaper
+        run: |
+          curl -s "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US" \
+          | jq -r '.images[0].url' \
+          | sed 's/^/https:\/\/www.bing.com/' \
+          | xargs -I {} curl -L {} -o assets/bing.jpg
+
+      - name: Commit and push if changed
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
           git add assets/bing.jpg
-
-          if git diff --cached --quiet; then
-            echo "No changes"
-            exit 0
-          fi
-
-          git commit -m "update bing background"
-
-          git push https://${GH_TOKEN}@github.com/about300/vps-deployment.git HEAD:main
+          git diff --cached --quiet || git commit -m "update bing background"
+          git push

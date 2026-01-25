@@ -1,37 +1,42 @@
-name: Update Bing Background
+name: update-bing
 
 on:
   schedule:
-    - cron: "0 1 * * *"   # 每天 01:00 UTC（国内早上）
+    - cron: "0 1 * * *"   # 每天一次（UTC）
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   update-bing:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true   # ⭐关键：使用 GITHUB_TOKEN
 
-      - name: Create assets directory
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Fetch Bing image metadata
+        run: |
+          curl -s "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1" > bing.json
+          IMG_URL=$(jq -r '.images[0].url' bing.json)
+          echo "IMG_URL=https://www.bing.com$IMG_URL" >> $GITHUB_ENV
+
+      - name: Download Bing image
         run: |
           mkdir -p assets
+          curl -L "$IMG_URL" -o assets/bing.jpg
 
-      - name: Download Bing wallpaper
-        run: |
-          curl -s "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US" \
-          | jq -r '.images[0].url' \
-          | sed 's/^/https:\/\/www.bing.com/' \
-          | xargs -I {} curl -L {} -o assets/bing.jpg
-
-      - name: Commit and push if changed
+      - name: Commit changes
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
           git add assets/bing.jpg
-          git diff --cached --quiet || git commit -m "update bing background"
+          git commit -m "update bing background" || echo "No changes"
+
+      - name: Push changes
+        run: |
           git push

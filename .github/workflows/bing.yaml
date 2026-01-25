@@ -1,27 +1,45 @@
-name: Update Bing Image
+name: Update Bing Background
 
 on:
   schedule:
-    - cron: "0 2 * * *"
+    - cron: "0 0 * * *"   # 每天 UTC 0 点
   workflow_dispatch:
 
 jobs:
-  update:
+  update-bing:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false   # ★关键：关闭默认 token
 
-      - name: Fetch Bing Image
+      - name: Fetch Bing image info
         run: |
-          mkdir -p web/assets
-          url=$(curl -s "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1" \
-            | jq -r '.images[0].url')
-          curl -L "https://www.bing.com${url}" -o web/assets/bing.jpg
+          curl -s "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1" > bing.json
 
-      - name: Commit
+      - name: Download Bing image
+        run: |
+          IMG_URL=$(cat bing.json | jq -r '.images[0].url')
+          FULL_URL="https://www.bing.com${IMG_URL}"
+          mkdir -p assets
+          curl -L "$FULL_URL" -o assets/bing.jpg
+
+      - name: Commit and push updated image
+        env:
+          GH_TOKEN: ${{ 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 }}   # ★关键：用你的 PAT
         run: |
           git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add web/assets/bing.jpg
-          git commit -m "update bing background" || echo "no change"
-          git push
+          git config user.email "github-actions@github.com"
+
+          git add assets/bing.jpg
+
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+
+          git commit -m "update bing background"
+
+          git push https://${GH_TOKEN}@github.com/about300/vps-deployment.git HEAD:main

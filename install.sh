@@ -397,6 +397,34 @@ server {
             return 204;
         }
     }
+
+    # ========================
+    # S-UI 面板反向代理
+    # ========================
+    location /app/ {
+        proxy_pass http://127.0.0.1:2095/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # ========================
+    # AdGuard Home 反向代理
+    # ========================
+    location /adguard/ {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
 }
 
 server {

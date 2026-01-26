@@ -7,30 +7,25 @@
 
   <meta name="description" content="黎黎love鹏鹏" />
 
-  <!-- 原有样式，不动 -->
+  <!-- 原有样式，不改路径 -->
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
   <!-- 背景兜底 -->
   <style>
-    html, body {
-      background: #0f172a;
-      color: #e5e7eb;
+    body {
+      background-color: #0f172a;
     }
-
-    /* Bing 图片背景 */
     .bg-layer {
       position: fixed;
       inset: 0;
       z-index: -2;
       background-image: url("assets/bing.jpg");
       background-size: cover;
-      background-position: center center;
+      background-position: center;
       background-repeat: no-repeat;
     }
-
-    /* 暗色遮罩，保证可读性 */
     .bg-mask {
       position: fixed;
       inset: 0;
@@ -38,14 +33,14 @@
       background: linear-gradient(
         to bottom,
         rgba(0,0,0,0.35),
-        rgba(0,0,0,0.6)
+        rgba(0,0,0,0.55)
       );
     }
   </style>
 </head>
 
 <body>
-  <!-- 背景层 -->
+  <!-- 背景 -->
   <div class="bg-layer"></div>
   <div class="bg-mask"></div>
 
@@ -90,7 +85,7 @@
       </form>
     </section>
 
-    <!-- 快速访问 -->
+    <!-- 快捷入口 -->
     <section class="tools-section">
       <h2 class="section-title">
         <i class="fas fa-rocket"></i> 快速访问
@@ -123,12 +118,11 @@
       </div>
     </section>
 
-    <!-- ================= 服务状态（无端口号） ================= -->
+    <!-- ================= 服务状态（不显示端口） ================= -->
     <section class="services-section" id="services">
       <h2 class="section-title">
         <i class="fas fa-heartbeat"></i> 服务状态
       </h2>
-
       <div class="services-grid" id="services-grid"></div>
     </section>
 
@@ -146,9 +140,9 @@
     document.getElementById('sui-card').href = SUI_URL;
     document.getElementById('adguard-card').href = ADGUARD_URL;
 
-    /* 服务检测（不显示端口） */
+    // ⚠️ 注意：这里不再渲染端口号
     const services = [
-      { name: 'Web 服务', icon: 'fa-globe', check: '/' },
+      { name: 'Web 服务', icon: 'fa-server', check: '/' },
       { name: '订阅转换', icon: 'fa-exchange-alt', check: '/subconvert/version' },
       { name: 'S-UI 面板', icon: 'fa-gauge-high', check: '/app/' },
       { name: 'AdGuard', icon: 'fa-shield-halved', check: '/adguard/' }
@@ -166,7 +160,7 @@
       `;
       grid.appendChild(card);
 
-      fetch(s.check)
+      fetch(s.check, { method: 'GET' })
         .then(r => {
           card.classList.remove('loading');
           card.classList.add(r.ok ? 'online' : 'offline');
@@ -180,6 +174,5 @@
     });
   </script>
 
-  <script src="js/main.js"></script>
 </body>
 </html>

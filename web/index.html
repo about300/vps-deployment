@@ -7,45 +7,42 @@
 
   <meta name="description" content="黎黎love鹏鹏" />
 
-  <!-- 原有样式，不改 -->
+  <!-- 原有样式，不改路径 -->
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-  <!-- ===== 背景 & 优化层（仅 index 内部）===== -->
+  <!-- 背景兜底 -->
   <style>
-    html, body {
-      color: #222;
-      background: url("/assets/bing.jpg") no-repeat center center fixed;
-      background-size: cover;
+    body {
+      background-color: #0f172a;
     }
-
-    /* 背景暗层（不是暗黑模式） */
-    body::before {
-      content: "";
+    .bg-layer {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.28);
+      z-index: -2;
+      background-image: url("assets/bing.jpg");
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+    .bg-mask {
+      position: fixed;
+      inset: 0;
       z-index: -1;
-    }
-
-    /* 移动端 Bing 裁剪优化 */
-    @media (max-width: 768px) {
-      html, body {
-        background-position: center top;
-      }
-    }
-
-    /* 强制隐藏任何端口显示（双保险） */
-    .service-port,
-    .port,
-    .service-card small {
-      display: none !important;
+      background: linear-gradient(
+        to bottom,
+        rgba(0,0,0,0.35),
+        rgba(0,0,0,0.55)
+      );
     }
   </style>
 </head>
 
 <body>
+  <!-- 背景 -->
+  <div class="bg-layer"></div>
+  <div class="bg-mask"></div>
 
   <!-- ================= 顶部导航 ================= -->
   <nav class="navbar">
@@ -79,7 +76,7 @@
 
     <!-- 搜索 -->
     <section class="search-section">
-      <form action="https://www.bing.com/search" method="GET" target="_blank">
+      <form action="https://www.google.com/search" method="GET" target="_blank">
         <div class="search-box">
           <i class="fas fa-search"></i>
           <input type="text" name="q" placeholder="搜索工具 / 服务 / 配置" />
@@ -99,7 +96,7 @@
           <div class="tool-icon"><i class="fas fa-exchange-alt"></i></div>
           <div class="tool-content">
             <h3>订阅转换</h3>
-            <p>仅内部 API 调用，不依赖公网访问</p>
+            <p>仅内部 API 调用</p>
           </div>
         </a>
 
@@ -115,13 +112,13 @@
           <div class="tool-icon"><i class="fas fa-shield-halved"></i></div>
           <div class="tool-content">
             <h3>AdGuard Home</h3>
-            <p>DNS 去广告与防追踪</p>
+            <p>DNS 去广告</p>
           </div>
         </a>
       </div>
     </section>
 
-    <!-- 服务状态 -->
+    <!-- ================= 服务状态（不显示端口） ================= -->
     <section class="services-section" id="services">
       <h2 class="section-title">
         <i class="fas fa-heartbeat"></i> 服务状态
@@ -143,11 +140,12 @@
     document.getElementById('sui-card').href = SUI_URL;
     document.getElementById('adguard-card').href = ADGUARD_URL;
 
-    /* 服务检测（不显示端口） */
+    // ⚠️ 注意：这里不再渲染端口号
     const services = [
+      { name: 'Web 服务', icon: 'fa-server', check: '/' },
       { name: '订阅转换', icon: 'fa-exchange-alt', check: '/subconvert/version' },
-      { name: 'S-UI', icon: 'fa-gauge-high', check: '/app/' },
-      { name: 'AdGuard Home', icon: 'fa-shield-halved', check: '/adguard/' }
+      { name: 'S-UI 面板', icon: 'fa-gauge-high', check: '/app/' },
+      { name: 'AdGuard', icon: 'fa-shield-halved', check: '/adguard/' }
     ];
 
     const grid = document.getElementById('services-grid');
@@ -162,7 +160,7 @@
       `;
       grid.appendChild(card);
 
-      fetch(s.check)
+      fetch(s.check, { method: 'GET' })
         .then(r => {
           card.classList.remove('loading');
           card.classList.add(r.ok ? 'online' : 'offline');
@@ -176,6 +174,5 @@
     });
   </script>
 
-  <script src="js/main.js"></script>
 </body>
 </html>

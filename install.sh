@@ -3,20 +3,20 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v4.9.3 (终极源码修复版)
+# Version: v5.1.0 (反代修复版)
 # Author: Auto-generated
-# Description: 基于源码修复的终极解决方案，彻底解决路径冲突问题
+# Description: 使用主域名路径访问所有服务，修复背景图片问题
 ##############################
 
-echo "===== VPS 全栈部署（终极源码修复版）v4.9.3 ====="
+echo "===== VPS 全栈部署（反代修复版）v5.1.0 ====="
 
 # -----------------------------
 # 版本信息
 # -----------------------------
-SCRIPT_VERSION="4.9.3"
+SCRIPT_VERSION="5.1.0"
 echo "版本: v${SCRIPT_VERSION}"
-echo "更新: 基于源码修复方案，彻底解决Sub-Web与主站CSS/JS路径冲突"
-echo "说明: 使用已修复的sub-web-modify仓库，无需部署时修正"
+echo "更新: 修复S-UI面板反代和主页背景图片问题"
+echo "说明: 所有服务使用主域名路径访问，背景图片自动更新"
 echo ""
 
 # -----------------------------
@@ -72,6 +72,14 @@ export CF_Token
 # Web主页GitHub仓库
 WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
 
+echo "[INFO] 将使用以下访问路径："
+echo "  • 主域名: https://$DOMAIN"
+echo "  • S-UI面板: https://$DOMAIN/sui/"
+echo "  • AdGuard Home: https://$DOMAIN/adguard/"
+echo "  • 订阅转换: https://$DOMAIN/subconvert/"
+echo "  • VLESS端口: $VLESS_PORT"
+echo ""
+
 # -----------------------------
 # 步骤 1：更新系统与依赖
 # -----------------------------
@@ -90,7 +98,7 @@ fi
 # -----------------------------
 # 步骤 2：防火墙配置
 # -----------------------------
-echo "[2/12] 配置防火墙（开放VLESS端口: $VLESS_PORT, S-UI端口: 2095）"
+echo "[2/12] 配置防火墙"
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
@@ -107,7 +115,7 @@ echo "y" | ufw --force enable
 
 echo "[INFO] 防火墙配置完成："
 echo "  • 开放端口: 22(SSH), 80(HTTP), 443(HTTPS), 2095(S-UI), 3000, 8445, 8446"
-echo "  • VLESS端口: ${VLESS_PORT} (外部可访问)"
+echo "  • VLESS端口: ${VLESS_PORT}"
 echo "  • 本地访问(127.0.0.1): 25500(subconverter)"
 echo ""
 
@@ -126,6 +134,7 @@ fi
 mkdir -p /etc/nginx/ssl/$DOMAIN
 
 if [ ! -f "/etc/nginx/ssl/$DOMAIN/fullchain.pem" ]; then
+    echo "[INFO] 为 $DOMAIN 申请SSL证书..."
     ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256
 fi
 
@@ -135,7 +144,7 @@ fi
     --reloadcmd "systemctl reload nginx"
 
 # -----------------------------
-# 步骤 4：安装 SubConverter 后端（直接下载固定版本）
+# 步骤 4：安装 SubConverter 后端
 # -----------------------------
 echo "[4/12] 安装 SubConverter 后端"
 mkdir -p /opt/subconverter
@@ -146,20 +155,20 @@ DOWNLOAD_URL="https://github.com/MetaCubeX/subconverter/releases/download/v0.9.2
 echo "[INFO] 下载 SubConverter 二进制文件..."
 wget -O /opt/subconverter/subconverter.tar.gz "$DOWNLOAD_URL"
 
-# 解压 SubConverter 文件并去除文件夹结构
+# 解压 SubConverter 文件
 echo "[INFO] 解压 SubConverter..."
 tar -zxvf /opt/subconverter/subconverter.tar.gz -C /opt/subconverter --strip-components=1
-rm -f /opt/subconverter/subconverter.tar.gz  # 删除压缩包
+rm -f /opt/subconverter/subconverter.tar.gz
 
 # 确保二进制文件可执行
 chmod +x /opt/subconverter/subconverter
 
-# 创建 subconverter.env 配置文件（使用3.4版本配置）
+# 创建 subconverter.env 配置文件
 echo "[INFO] 创建 subconverter.env 配置文件"
 cat > /opt/subconverter/subconverter.env <<EOF
 # SubConverter 配置文件
 API_MODE=true
-API_HOST=0.0.0.0  # 监听所有地址
+API_HOST=0.0.0.0
 API_PORT=25500
 CACHE_ENABLED=true
 CACHE_SUBSCRIPTION=true
@@ -170,7 +179,7 @@ EOF
 
 chmod 600 /opt/subconverter/subconverter.env
 
-# 创建 systemd 服务（使用3.4版本配置）
+# 创建 systemd 服务
 cat >/etc/systemd/system/subconverter.service <<EOF
 [Unit]
 Description=SubConverter 服务
@@ -193,9 +202,9 @@ systemctl enable subconverter
 systemctl restart subconverter
 
 # -----------------------------
-# 步骤 5：构建 sub-web-modify 前端（使用已修复的源码）
+# 步骤 5：构建 sub-web-modify 前端
 # -----------------------------
-echo "[5/12] 构建 sub-web-modify 前端（源码已修复）"
+echo "[5/12] 构建 sub-web-modify 前端"
 if ! command -v node &> /dev/null; then
     echo "[INFO] 安装 Node.js..."
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -206,28 +215,18 @@ fi
 rm -rf /opt/sub-web-modify
 mkdir -p /opt/sub-web-modify
 
-# 克隆已修复的仓库（确保仓库已修复public/index.html和vue.config.js）
+# 克隆已修复的仓库
 echo "[INFO] 克隆已修复的sub-web-modify仓库..."
 git clone https://github.com/about300/sub-web-modify /opt/sub-web-modify
 
 cd /opt/sub-web-modify
 
+# 验证源码修复状态
 echo "[INFO] 验证源码修复状态..."
-echo "[INFO] 1. 检查public/index.html中的资源路径"
 if grep -q 'href="/subconvert/css/main.css"' public/index.html 2>/dev/null; then
     echo "    ✅ public/index.html路径已修复"
 else
     echo "    ⚠️  public/index.html可能需要手动修复"
-    echo "    [INFO] 确保以下路径存在："
-    echo "    - href=\"/subconvert/css/main.css\""
-    echo "    - src=\"/subconvert/js/jquery.min.js\""
-fi
-
-echo "[INFO] 2. 检查vue.config.js配置"
-if grep -q "publicPath: '/subconvert/'" vue.config.js 2>/dev/null; then
-    echo "    ✅ vue.config.js配置正确"
-else
-    echo "    ⚠️  vue.config.js可能需要配置publicPath"
 fi
 
 # 安装依赖
@@ -239,29 +238,17 @@ echo "[INFO] 构建前端..."
 npm run build
 
 # 验证构建结果
-echo "[INFO] 验证构建结果..."
 if [ -f "dist/index.html" ]; then
-    echo "    ✅ 构建成功，dist目录已生成"
-    
-    # 检查构建后的资源路径
-    echo "    [INFO] 构建后的资源路径："
-    grep -E 'href="|src="' dist/index.html | grep -E "(css|js)" | head -5
-    
-    # 关键验证：确保所有资源路径正确
-    if grep -q 'href="/subconvert/' dist/index.html && grep -q 'src="/subconvert/' dist/index.html; then
-        echo "    ✅ 所有资源路径已正确配置为/subconvert/前缀"
-    else
-        echo "    ⚠️  部分资源路径可能未正确配置"
-    fi
+    echo "    ✅ 构建成功"
 else
-    echo "    ❌ 构建失败，dist目录未生成"
+    echo "    ❌ 构建失败"
     exit 1
 fi
 
-echo "[INFO] Sub-Web前端部署完成（源码已修复，无需额外修正）"
+echo "[INFO] Sub-Web前端部署完成"
 
 # -----------------------------
-# 步骤 6：安装 S-UI 面板（使用默认交互方式）
+# 步骤 6：安装 S-UI 面板
 # -----------------------------
 echo "[6/12] 安装 S-UI 面板"
 echo "[INFO] 使用官方安装脚本安装 S-UI 面板..."
@@ -269,7 +256,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.s
 echo "[INFO] S-UI 面板安装完成"
 
 # -----------------------------
-# 步骤 7：安装 AdGuard Home（使用指定命令）
+# 步骤 7：安装 AdGuard Home
 # -----------------------------
 echo "[7/12] 安装 AdGuard Home"
 echo "[INFO] 使用指定命令安装 AdGuard Home..."
@@ -287,9 +274,9 @@ echo "[INFO] AdGuard Home 安装完成"
 cd - > /dev/null
 
 # -----------------------------
-# 步骤 8：从GitHub部署主页
+# 步骤 8：从GitHub部署主页（带背景图片）
 # -----------------------------
-echo "[8/12] 从GitHub部署主页"
+echo "[8/12] 从GitHub部署主页（包含背景图片）"
 rm -rf /opt/web-home
 mkdir -p /opt/web-home/current
 
@@ -300,6 +287,12 @@ git clone $WEB_HOME_REPO /tmp/web-home-repo
 if [ -d "/tmp/web-home-repo/web" ]; then
     echo "[INFO] 找到web目录，复制所有文件..."
     cp -r /tmp/web-home-repo/web/* /opt/web-home/current/
+    
+    # 确保assets目录存在
+    if [ ! -d "/opt/web-home/current/assets" ]; then
+        mkdir -p /opt/web-home/current/assets
+        echo "[INFO] 创建assets目录"
+    fi
 else
     echo "[INFO] 未找到web目录，复制仓库根目录..."
     cp -r /tmp/web-home-repo/* /opt/web-home/current/
@@ -308,12 +301,19 @@ fi
 # 确保目录结构正确
 mkdir -p /opt/web-home/current/css
 mkdir -p /opt/web-home/current/js
+mkdir -p /opt/web-home/current/assets
 
-# 替换index.html中的背景图片路径
-echo "[INFO] 替换index.html中的背景图片路径..."
-cp /opt/web-home/current/index.html /opt/web-home/current/index.html.bak
-
-sed -i 's|url("background.jpg")|url("/assets/bing.jpg")|g' /opt/web-home/current/index.html
+# 验证背景图片路径
+echo "[INFO] 验证背景图片路径..."
+if [ -f "/tmp/web-home-repo/web/assets/bing.jpg" ]; then
+    echo "    ✅ 找到bing.jpg背景图片"
+    cp /tmp/web-home-repo/web/assets/bing.jpg /opt/web-home/current/assets/
+elif [ -f "/tmp/web-home-repo/assets/bing.jpg" ]; then
+    echo "    ✅ 找到bing.jpg背景图片（根目录）"
+    cp /tmp/web-home-repo/assets/bing.jpg /opt/web-home/current/assets/
+else
+    echo "    ⚠️  未找到bing.jpg背景图片，将使用默认路径"
+fi
 
 # 设置文件权限
 chown -R www-data:www-data /opt/web-home/current
@@ -325,70 +325,88 @@ rm -rf /tmp/web-home-repo
 echo "[INFO] 主页部署完成"
 
 # -----------------------------
-# 步骤 9：配置 Nginx（简化版，无需复杂重定向）
+# 步骤 9：配置 Nginx（包含所有服务反代）
 # -----------------------------
-echo "[9/12] 配置 Nginx（简化稳定配置）"
+echo "[9/12] 配置 Nginx（包含S-UI和AdGuard Home反代）"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 80;
     server_name $DOMAIN;
+    return 301 https://\$server_name\$request_uri;
+}
 
-    ssl_certificate     /etc/nginx/ssl/$DOMAIN/fullchain.pem;
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+    
+    ssl_certificate /etc/nginx/ssl/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
-
-    root /opt/web-home/current;
-    index index.html;
-
-    # ========================
-    # 主站点
-    # ========================
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    
+    # 主页
     location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # 主站静态文件缓存
-    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # ========================
-    # Sub-Web 前端应用
-    # ========================
-    location /subconvert/ {
-        alias /opt/sub-web-modify/dist/;
+        root /opt/web-home/current;
         index index.html;
-
-        # Vue SPA 路由兜底
-        try_files $uri $uri/ /index.html;
-
-        # Sub-Web 静态资源缓存（必须包含字体）
-        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf)$ {
-            expires 1y;
-            add_header Cache-Control "public, immutable";
-        }
-    }
-
-    # ========================
-    # SubConverter API
-    # ========================
-    location /sub/api/ {
-        proxy_pass http://127.0.0.1:25500/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-
+        try_files \$uri \$uri/ /index.html;
+        
+        # 添加CORS头部
         add_header Access-Control-Allow-Origin *;
         add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
         add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
-
-        if ($request_method = 'OPTIONS') {
+    }
+    
+    # 静态资源
+    location /assets/ {
+        root /opt/web-home/current;
+        expires 1d;
+        add_header Cache-Control "public, max-age=86400";
+        
+        # 尝试提供背景图片
+        try_files \$uri /assets/bing.jpg;
+    }
+    
+    location /css/ {
+        root /opt/web-home/current;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    location /js/ {
+        root /opt/web-home/current;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Sub-Web前端
+    location /subconvert/ {
+        alias /opt/sub-web-modify/dist/;
+        index index.html;
+        try_files \$uri \$uri/ /subconvert/index.html;
+        
+        # 添加CORS头部
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
+        add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
+    }
+    
+    # SubConverter API反向代理
+    location /sub/api/ {
+        proxy_pass http://127.0.0.1:25500/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # 允许跨域
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
+        add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
+        
+        if (\$request_method = 'OPTIONS') {
             add_header Access-Control-Allow-Origin *;
             add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
             add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
@@ -398,54 +416,126 @@ server {
             return 204;
         }
     }
-
-    # ========================
-    # S-UI 面板反向代理
-    # ========================
-    location /app/ {
+    
+    # S-UI面板反向代理 - 使用根路径重写
+    location /sui/ {
         proxy_pass https://127.0.0.1:2095/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # 处理WebSocket连接
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
         proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         
-        # 处理Cookie路径
-        proxy_cookie_path / /app/;
+        # 重写响应中的URL，解决登录跳转问题
+        proxy_redirect https://127.0.0.1:2095/ https://\$host/sui/;
+        proxy_redirect https://\$host:2095/ https://\$host/sui/;
         
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        # 修改HTML响应中的链接
+        sub_filter_once off;
+        sub_filter_types text/html;
+        sub_filter 'href="/' 'href="/sui/';
+        sub_filter 'src="/' 'src="/sui/';
+        sub_filter 'action="/' 'action="/sui/';
+        sub_filter 'url("/' 'url("/sui/';
+        sub_filter "url('/" "url('/sui/";
+        
+        # 处理可能的绝对路径
+        sub_filter 'https://127.0.0.1:2095' 'https://\$host/sui';
+        sub_filter 'https://\$host:2095' 'https://\$host/sui';
+        
+        # 处理API路径
+        sub_filter '"/api/' '"/sui/api/';
     }
-
-    # ========================
-    # AdGuard Home 反向代理
-    # ========================
+    
+    # S-UI API路径
+    location /sui/api/ {
+        proxy_pass https://127.0.0.1:2095/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    # S-UI静态资源
+    location /sui/static/ {
+        proxy_pass https://127.0.0.1:2095/static/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    # S-UI根路径重定向
+    location = /sui {
+        return 301 https://\$host/sui/;
+    }
+    
+    # AdGuard Home反向代理
     location /adguard/ {
-        proxy_pass https://127.0.0.1:3000/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # AdGuard Home需要WebSocket支持
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # 重写响应中的URL
+        proxy_redirect http://127.0.0.1:3000/ https://\$host/adguard/;
+        proxy_redirect http://\$host:3000/ https://\$host/adguard/;
+        
+        # 修改HTML响应中的链接
+        sub_filter_once off;
+        sub_filter_types text/html text/css text/javascript application/javascript;
+        sub_filter 'href="/' 'href="/adguard/';
+        sub_filter 'src="/' 'src="/adguard/';
+        sub_filter 'action="/' 'action="/adguard/';
+        sub_filter 'url("/' 'url("/adguard/';
+        sub_filter "url('/" "url('/adguard/";
+        
+        # 处理API路径
+        sub_filter '"/control/' '"/adguard/control/';
+        sub_filter '"/dhcp/' '"/adguard/dhcp/';
     }
-}
-
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $DOMAIN;
-    return 301 https://$server_name$request_uri;
+    
+    # AdGuard Home控制接口
+    location /adguard/control/ {
+        proxy_pass http://127.0.0.1:3000/control/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+    
+    # AdGuard Home DHCP接口
+    location /adguard/dhcp/ {
+        proxy_pass http://127.0.0.1:3000/dhcp/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    # AdGuard Home根路径重定向
+    location = /adguard {
+        return 301 https://\$host/adguard/;
+    }
+    
+    access_log /var/log/nginx/main_access.log;
+    error_log /var/log/nginx/main_error.log;
 }
 EOF
-
 
 # 移除默认站点，启用新配置
 rm -f /etc/nginx/sites-enabled/default
@@ -463,12 +553,12 @@ else
 fi
 
 # -----------------------------
-# 步骤 10：创建自动更新脚本
+# 步骤 10：创建自动更新脚本（带背景图片更新）
 # -----------------------------
-echo "[10/12] 创建自动更新脚本"
+echo "[10/12] 创建自动更新脚本（包含背景图片更新）"
 cat > /usr/local/bin/update-web-home.sh <<'EOF'
 #!/bin/bash
-# Web主页自动更新脚本
+# Web主页自动更新脚本（包含背景图片）
 set -e
 
 echo "[INFO] $(date) - 开始更新Web主页"
@@ -491,21 +581,41 @@ if git clone https://github.com/about300/vps-deployment.git /tmp/web-home-update
     echo "[INFO] 部署新版本..."
     rm -rf /opt/web-home/current/*
     
+    # 确定源目录
+    SRC_DIR="/tmp/web-home-update"
     if [ -d "/tmp/web-home-update/web" ]; then
-        cp -r /tmp/web-home-update/web/* /opt/web-home/current/
-    else
-        cp -r /tmp/web-home-update/* /opt/web-home/current/
+        SRC_DIR="/tmp/web-home-update/web"
     fi
     
-    # 替换域名
+    # 复制所有文件
+    cp -r "$SRC_DIR"/* /opt/web-home/current/
+    
+    # 确保assets目录存在
+    mkdir -p /opt/web-home/current/assets
+    
+    # 复制背景图片（如果存在）
+    if [ -f "/tmp/web-home-update/web/assets/bing.jpg" ]; then
+        cp /tmp/web-home-update/web/assets/bing.jpg /opt/web-home/current/assets/
+        echo "[INFO] 已更新背景图片: bing.jpg"
+    elif [ -f "/tmp/web-home-update/assets/bing.jpg" ]; then
+        cp /tmp/web-home-update/assets/bing.jpg /opt/web-home/current/assets/
+        echo "[INFO] 已更新背景图片: bing.jpg"
+    else
+        echo "[WARN] 未找到背景图片，使用现有图片"
+    fi
+    
+    # 替换域名和端口（如果index.html中有占位符）
     if [ -f "/opt/web-home/current/index.html" ]; then
         DOMAIN=$(cat /etc/nginx/sites-available/* | grep "server_name" | head -1 | awk '{print $2}' | tr -d ';')
         VLESS_PORT=$(cat /opt/web-home/current/index.html | grep -o 'VLESS_PORT=[0-9]*' | head -1 | cut -d= -f2)
         [ -z "$VLESS_PORT" ] && VLESS_PORT="8443"
         
+        # 替换各种可能的占位符
         sed -i "s|\\\${DOMAIN}|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
         sed -i "s|\\\$DOMAIN|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
         sed -i "s|\\\${VLESS_PORT}|$VLESS_PORT|g" /opt/web-home/current/index.html 2>/dev/null || true
+        sed -i "s|DOMAIN_PLACEHOLDER|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
+        sed -i "s|VLESS_PORT_PLACEHOLDER|$VLESS_PORT|g" /opt/web-home/current/index.html 2>/dev/null || true
     fi
     
     # 设置权限
@@ -543,51 +653,62 @@ echo "开始手动更新Web主页..."
 EOF
 chmod +x /usr/local/bin/update-home
 
-# 添加cron任务
+# 添加cron任务（每天凌晨3点更新）
 (crontab -l 2>/dev/null; echo "0 3 * * * /usr/local/bin/update-web-home.sh >> /var/log/web-home-update.log 2>&1") | crontab -
+
+echo "[INFO] 已设置自动更新任务（每天凌晨3点）"
 
 # -----------------------------
 # 步骤 11：创建服务检查脚本
 # -----------------------------
 echo "[11/12] 创建服务检查脚本"
-cat > /usr/local/bin/check-services.sh <<'EOF'
+cat > /usr/local/bin/check-services.sh <<EOF
 #!/bin/bash
 echo "=== VPS 服务状态检查 ==="
-echo "时间: $(date)"
-DOMAIN=$(cat /etc/nginx/sites-available/* 2>/dev/null | grep "server_name" | head -1 | awk '{print $2}' | tr -d ';' || echo "未配置")
-echo "域名: $DOMAIN"
+echo "时间: \$(date)"
+DOMAIN="${DOMAIN}"
+echo "域名: \$DOMAIN"
 echo ""
 
 echo "1. 服务状态:"
-echo "   Nginx: $(systemctl is-active nginx 2>/dev/null || echo '未安装')"
-echo "   SubConverter: $(systemctl is-active subconverter 2>/dev/null || echo '未安装')"
-echo "   S-UI: $(systemctl is-active s-ui 2>/dev/null || echo '未安装')"
-echo "   AdGuard Home: $(systemctl is-active AdGuardHome 2>/dev/null || echo '未安装')"
+echo "   Nginx: \$(systemctl is-active nginx 2>/dev/null || echo '未安装')"
+echo "   SubConverter: \$(systemctl is-active subconverter 2>/dev/null || echo '未安装')"
+echo "   S-UI: \$(systemctl is-active s-ui 2>/dev/null || echo '未安装')"
+echo "   AdGuard Home: \$(systemctl is-active AdGuardHome 2>/dev/null || echo '未安装')"
 echo ""
 
 echo "2. 端口监听:"
-echo "   443 (HTTPS): $(ss -tln 2>/dev/null | grep ':443 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo "   2095 (S-UI): $(ss -tln 2>/dev/null | grep ':2095 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo "   3000 (AdGuard): $(ss -tln 2>/dev/null | grep ':3000 ' && echo '✅ 监听中' || echo '❌ 未监听')"
-echo "   25500 (SubConverter): $(ss -tln 2>/dev/null | grep ':25500 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   443 (HTTPS): \$(ss -tln 2>/dev/null | grep ':443 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   2095 (S-UI): \$(ss -tln 2>/dev/null | grep ':2095 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   3000 (AdGuard): \$(ss -tln 2>/dev/null | grep ':3000 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   25500 (SubConverter): \$(ss -tln 2>/dev/null | grep ':25500 ' && echo '✅ 监听中' || echo '❌ 未监听')"
 echo ""
 
 echo "3. 目录检查:"
-echo "   主页目录: $(ls -la /opt/web-home/current/ 2>/dev/null | wc -l) 个文件"
-echo "   Sub-Web前端: $(ls -la /opt/sub-web-modify/dist/ 2>/dev/null | wc -l) 个文件"
-echo "   SubConverter: $(ls -la /opt/subconverter/ 2>/dev/null | wc -l) 个文件"
+echo "   主页目录: \$(ls -la /opt/web-home/current/ 2>/dev/null | wc -l) 个文件"
+echo "   Sub-Web前端: \$(ls -la /opt/sub-web-modify/dist/ 2>/dev/null | wc -l) 个文件"
+echo "   SubConverter: \$(ls -la /opt/subconverter/ 2>/dev/null | wc -l) 个文件"
 echo ""
 
-echo "4. 路径兼容性:"
-if [ -f "/opt/sub-web-modify/dist/index.html" ]; then
-    if grep -q 'href="/subconvert/' /opt/sub-web-modify/dist/index.html 2>/dev/null; then
-        echo "   Sub-Web资源路径: ✅ 已配置为/subconvert/前缀"
-    else
-        echo "   Sub-Web资源路径: ⚠️  未完全配置"
-    fi
+echo "4. 背景图片检查:"
+if [ -f "/opt/web-home/current/assets/bing.jpg" ]; then
+    echo "   ✅ 背景图片存在: /opt/web-home/current/assets/bing.jpg"
+    echo "   文件大小: \$(ls -lh /opt/web-home/current/assets/bing.jpg | awk '{print \$5}')"
 else
-    echo "   Sub-Web资源路径: ❌ 文件不存在"
+    echo "   ⚠️  背景图片不存在"
+    echo "   [INFO] 在以下位置查找:"
+    find /opt/web-home/current -name "*.jpg" -o -name "*.png" | head -5
 fi
+echo ""
+
+echo "5. 访问路径:"
+echo "   主页:        https://\$DOMAIN/"
+echo "   S-UI面板:    https://\$DOMAIN/sui/"
+echo "   AdGuard Home: https://\$DOMAIN/adguard/"
+echo "   订阅转换:     https://\$DOMAIN/subconvert/"
+echo "   直接访问:"
+echo "     S-UI:     https://\$DOMAIN:2095"
+echo "     AdGuard:  https://\$DOMAIN:3000"
 EOF
 
 chmod +x /usr/local/bin/check-services.sh
@@ -614,17 +735,6 @@ echo ""
 echo "2. 检查目录:"
 if [ -f "/opt/sub-web-modify/dist/index.html" ]; then
     echo "   ✅ Sub-Web前端文件存在"
-    echo "   [INFO] 资源路径验证:"
-    if grep -q 'href="/subconvert/css/main.css"' /opt/sub-web-modify/dist/index.html 2>/dev/null; then
-        echo "     ✅ CSS路径: /subconvert/css/main.css"
-    else
-        echo "     ⚠️  CSS路径可能需要验证"
-    fi
-    if grep -q 'src="/subconvert/js/jquery.min.js"' /opt/sub-web-modify/dist/index.html 2>/dev/null; then
-        echo "     ✅ JS路径: /subconvert/js/jquery.min.js"
-    else
-        echo "     ⚠️  JS路径可能需要验证"
-    fi
 else
     echo "   ⚠️  Sub-Web前端文件不存在"
 fi
@@ -637,22 +747,33 @@ fi
 
 if [ -f "/opt/web-home/current/index.html" ]; then
     echo "   ✅ 主页文件存在"
+    # 检查背景图片
+    if [ -f "/opt/web-home/current/assets/bing.jpg" ]; then
+        echo "   ✅ 背景图片存在: /opt/web-home/current/assets/bing.jpg"
+    else
+        echo "   ⚠️  背景图片不存在，将在下次更新时获取"
+    fi
 else
     echo "   ⚠️  主页文件不存在"
 fi
 
 echo ""
-echo "3. 路径架构说明:"
-echo "   • 主站资源路径: /css/, /js/ (独立使用)"
-echo "   • Sub-Web资源路径: /subconvert/css/, /subconvert/js/ (专属路径)"
-echo "   • 两者完全隔离，互不干扰"
-echo "   • 其他服务: S-UI(:2095), AdGuard Home(:3000) 独立端口"
+echo "3. 路径架构:"
+echo "   • 主站: / (独立资源路径)"
+echo "   • Sub-Web: /subconvert/ (专属路径)"
+echo "   • S-UI面板: /sui/ (通过Nginx反代，解决登录跳转)"
+echo "   • AdGuard Home: /adguard/ (通过Nginx反代)"
+echo "   • 所有服务使用同一个域名，不同路径访问"
 
 echo ""
 echo "4. 访问地址:"
 echo "   • 主页面: https://$DOMAIN"
+echo "   • S-UI面板: https://$DOMAIN/sui/"
+echo "   • AdGuard Home: https://$DOMAIN/adguard/"
 echo "   • 订阅转换前端: https://$DOMAIN/subconvert/"
 echo "   • 订阅转换API: https://$DOMAIN/sub/api/"
+echo ""
+echo "   备用访问（直接端口）:"
 echo "   • S-UI面板: https://$DOMAIN:2095"
 echo "   • AdGuard Home: https://$DOMAIN:3000"
 
@@ -664,24 +785,26 @@ echo "====================================="
 echo "🎉 VPS 全栈部署完成 v${SCRIPT_VERSION}"
 echo "====================================="
 echo ""
-echo "📋 核心特性:"
+echo "📋 核心修复:"
 echo ""
-echo "  ✅ 源码级修复: Sub-Web源码已修复，资源路径为/subconvert/前缀"
-echo "  ✅ 路径完全隔离: 主站与Sub-Web使用独立路径空间"
-echo "  ✅ 一键部署: 无需复杂配置修正"
-echo "  ✅ 服务兼容: 所有服务正常运行"
+echo "  ✅ S-UI面板反代: 通过/sub/路径访问，使用Nginx sub_filter修复跳转"
+echo "  ✅ AdGuard Home反代: 通过/adguard/路径访问"
+echo "  ✅ 背景图片支持: 自动从GitHub仓库获取bing.jpg"
+echo "  ✅ 路径完全隔离: 所有服务使用独立路径，避免冲突"
+echo "  ✅ 自动更新: 主页和背景图片每天自动更新"
 echo ""
-echo "🌐 访问地址:"
+echo "🌐 访问地址 (全部使用 $DOMAIN):"
 echo ""
-echo "  主页面:       https://$DOMAIN"
-echo "  订阅转换前端: https://$DOMAIN/subconvert/"
-echo "  订阅转换API:  https://$DOMAIN/sub/api/"
-echo "  S-UI面板:     https://$DOMAIN:2095"
-echo "  AdGuard Home: https://$DOMAIN:3000"
+echo "   主页面:        https://$DOMAIN"
+echo "   S-UI面板:     https://$DOMAIN/sui/"
+echo "   AdGuard Home: https://$DOMAIN/adguard/"
+echo "   订阅转换前端:  https://$DOMAIN/subconvert/"
+echo "   订阅转换API:   https://$DOMAIN/sub/api/"
 echo ""
-echo "🔐 SSL证书路径:"
-echo "   • /etc/nginx/ssl/$DOMAIN/fullchain.pem"
-echo "   • /etc/nginx/ssl/$DOMAIN/key.pem"
+echo "🔄 自动更新:"
+echo "   • 主页和背景图片每天凌晨3点自动更新"
+echo "   • 背景图片来源: vps-deployment/web/assets/bing.jpg"
+echo "   • 手动更新命令: update-home"
 echo ""
 echo "🛠️ 管理命令:"
 echo "  • 服务状态: check-services.sh"
@@ -690,6 +813,7 @@ echo "  • 查看日志: journalctl -u 服务名 -f"
 echo ""
 echo "📁 重要目录:"
 echo "  • 主页: /opt/web-home/current/"
+echo "  • 背景图片: /opt/web-home/current/assets/bing.jpg"
 echo "  • Sub-Web: /opt/sub-web-modify/dist/"
 echo "  • SubConverter: /opt/subconverter/"
 echo ""
@@ -702,3 +826,14 @@ echo ""
 echo "🔍 执行快速测试..."
 sleep 2
 bash /usr/local/bin/check-services.sh
+
+echo ""
+echo "🚀 部署完成！请测试以下地址："
+echo "1. 主页面: https://$DOMAIN"
+echo "2. S-UI面板: https://$DOMAIN/sui/"
+echo "3. AdGuard Home: https://$DOMAIN/adguard/"
+echo ""
+echo "💡 提示: 如果S-UI面板登录后有问题，请尝试:"
+echo "  1. 清除浏览器缓存"
+echo "  2. 或直接访问: https://$DOMAIN:2095"
+echo ""

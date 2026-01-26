@@ -24,7 +24,7 @@ jobs:
       - name: Download Bing image
         run: |
           IMG_URL=$(jq -r '.images[0].url' bing.json)
-          mkdir -p assets
+          mkdir -p web/assets
           curl -L "https://www.bing.com${IMG_URL}" -o assets/bing.jpg
 
       - name: Commit and push if changed

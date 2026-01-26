@@ -3,20 +3,20 @@ set -e
 
 ##############################
 # VPS 全栈部署脚本
-# Version: v5.1.0 (反代修复版)
+# Version: v5.3.0 (S-UI反代修复版)
 # Author: Auto-generated
-# Description: 使用主域名路径访问所有服务，修复背景图片问题
+# Description: 修复S-UI面板反代问题，保留证书路径显示
 ##############################
 
-echo "===== VPS 全栈部署（反代修复版）v5.1.0 ====="
+echo "===== VPS 全栈部署（S-UI反代修复版）v5.3.0 ====="
 
 # -----------------------------
 # 版本信息
 # -----------------------------
-SCRIPT_VERSION="5.1.0"
+SCRIPT_VERSION="5.3.0"
 echo "版本: v${SCRIPT_VERSION}"
-echo "更新: 修复S-UI面板反代和主页背景图片问题"
-echo "说明: 所有服务使用主域名路径访问，背景图片自动更新"
+echo "更新: 修复S-UI面板反代跳转问题"
+echo "说明: 优化S-UI面板反代配置，解决/app路径跳转问题"
 echo ""
 
 # -----------------------------
@@ -83,9 +83,9 @@ echo ""
 # -----------------------------
 # 步骤 1：更新系统与依赖
 # -----------------------------
-echo "[1/12] 更新系统与安装依赖"
+echo "[1/13] 更新系统与安装依赖"
 apt update -y
-apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 npm net-tools
+apt install -y curl wget git unzip socat cron ufw nginx build-essential python3 python-is-python3 npm net-tools jq
 
 # 确保Nginx有sub_filter模块
 if nginx -V 2>&1 | grep -q "http_sub_module"; then
@@ -98,7 +98,7 @@ fi
 # -----------------------------
 # 步骤 2：防火墙配置
 # -----------------------------
-echo "[2/12] 配置防火墙"
+echo "[2/13] 配置防火墙"
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
@@ -125,7 +125,7 @@ ufw status numbered
 # -----------------------------
 # 步骤 3：安装 acme.sh 和 SSL 证书
 # -----------------------------
-echo "[3/12] 安装 SSL 证书"
+echo "[3/13] 安装 SSL 证书"
 if [ ! -d "$HOME/.acme.sh" ]; then
     curl https://get.acme.sh | sh
     source ~/.bashrc
@@ -146,7 +146,7 @@ fi
 # -----------------------------
 # 步骤 4：安装 SubConverter 后端
 # -----------------------------
-echo "[4/12] 安装 SubConverter 后端"
+echo "[4/13] 安装 SubConverter 后端"
 mkdir -p /opt/subconverter
 
 # 直接下载 SubConverter 固定版本 (v0.9.2)
@@ -164,7 +164,6 @@ rm -f /opt/subconverter/subconverter.tar.gz
 chmod +x /opt/subconverter/subconverter
 
 # 创建 subconverter.env 配置文件
-echo "[INFO] 创建 subconverter.env 配置文件"
 cat > /opt/subconverter/subconverter.env <<EOF
 # SubConverter 配置文件
 API_MODE=true
@@ -204,7 +203,7 @@ systemctl restart subconverter
 # -----------------------------
 # 步骤 5：构建 sub-web-modify 前端
 # -----------------------------
-echo "[5/12] 构建 sub-web-modify 前端"
+echo "[5/13] 构建 sub-web-modify 前端"
 if ! command -v node &> /dev/null; then
     echo "[INFO] 安装 Node.js..."
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -250,7 +249,7 @@ echo "[INFO] Sub-Web前端部署完成"
 # -----------------------------
 # 步骤 6：安装 S-UI 面板
 # -----------------------------
-echo "[6/12] 安装 S-UI 面板"
+echo "[6/13] 安装 S-UI 面板"
 echo "[INFO] 使用官方安装脚本安装 S-UI 面板..."
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 echo "[INFO] S-UI 面板安装完成"
@@ -258,7 +257,7 @@ echo "[INFO] S-UI 面板安装完成"
 # -----------------------------
 # 步骤 7：安装 AdGuard Home
 # -----------------------------
-echo "[7/12] 安装 AdGuard Home"
+echo "[7/13] 安装 AdGuard Home"
 echo "[INFO] 使用指定命令安装 AdGuard Home..."
 cd /tmp
 curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
@@ -274,11 +273,12 @@ echo "[INFO] AdGuard Home 安装完成"
 cd - > /dev/null
 
 # -----------------------------
-# 步骤 8：从GitHub部署主页（带背景图片）
+# 步骤 8：从GitHub部署主页（并下载Bing背景图片）
 # -----------------------------
-echo "[8/12] 从GitHub部署主页（包含背景图片）"
+echo "[8/13] 从GitHub部署主页（并获取Bing背景图片）"
 rm -rf /opt/web-home
 mkdir -p /opt/web-home/current
+mkdir -p /opt/web-home/current/assets
 
 echo "[INFO] 克隆GitHub仓库获取主页..."
 git clone $WEB_HOME_REPO /tmp/web-home-repo
@@ -287,12 +287,6 @@ git clone $WEB_HOME_REPO /tmp/web-home-repo
 if [ -d "/tmp/web-home-repo/web" ]; then
     echo "[INFO] 找到web目录，复制所有文件..."
     cp -r /tmp/web-home-repo/web/* /opt/web-home/current/
-    
-    # 确保assets目录存在
-    if [ ! -d "/opt/web-home/current/assets" ]; then
-        mkdir -p /opt/web-home/current/assets
-        echo "[INFO] 创建assets目录"
-    fi
 else
     echo "[INFO] 未找到web目录，复制仓库根目录..."
     cp -r /tmp/web-home-repo/* /opt/web-home/current/
@@ -301,18 +295,70 @@ fi
 # 确保目录结构正确
 mkdir -p /opt/web-home/current/css
 mkdir -p /opt/web-home/current/js
-mkdir -p /opt/web-home/current/assets
 
-# 验证背景图片路径
-echo "[INFO] 验证背景图片路径..."
-if [ -f "/tmp/web-home-repo/web/assets/bing.jpg" ]; then
-    echo "    ✅ 找到bing.jpg背景图片"
-    cp /tmp/web-home-repo/web/assets/bing.jpg /opt/web-home/current/assets/
-elif [ -f "/tmp/web-home-repo/assets/bing.jpg" ]; then
-    echo "    ✅ 找到bing.jpg背景图片（根目录）"
-    cp /tmp/web-home-repo/assets/bing.jpg /opt/web-home/current/assets/
+# 下载今日Bing背景图片
+echo "[INFO] 获取今日Bing背景图片..."
+mkdir -p /tmp/bing-image
+cd /tmp/bing-image
+
+# 获取Bing图片信息
+echo "[INFO] 获取Bing图片信息..."
+BING_INFO=$(curl -s "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1")
+if [ $? -eq 0 ]; then
+    # 提取图片URL
+    IMG_URL=$(echo $BING_INFO | jq -r '.images[0].url' 2>/dev/null)
+    
+    if [ ! -z "$IMG_URL" ] && [ "$IMG_URL" != "null" ]; then
+        echo "[INFO] 发现Bing图片: $IMG_URL"
+        
+        # 下载图片
+        FULL_URL="https://www.bing.com${IMG_URL}"
+        echo "[INFO] 下载图片: $FULL_URL"
+        
+        if wget -q -O bing_today.jpg "$FULL_URL"; then
+            # 复制到网站目录
+            cp bing_today.jpg /opt/web-home/current/assets/bing.jpg
+            echo "[INFO] Bing背景图片已下载: /opt/web-home/current/assets/bing.jpg"
+            
+            # 检查图片大小
+            IMG_SIZE=$(stat -c%s /opt/web-home/current/assets/bing.jpg)
+            echo "[INFO] 图片大小: $((IMG_SIZE/1024)) KB"
+        else
+            echo "[WARN] 下载Bing图片失败，使用默认背景"
+            # 使用仓库中的背景图片（如果有）
+            if [ -f "/tmp/web-home-repo/web/assets/bing.jpg" ]; then
+                cp /tmp/web-home-repo/web/assets/bing.jpg /opt/web-home/current/assets/
+            elif [ -f "/tmp/web-home-repo/assets/bing.jpg" ]; then
+                cp /tmp/web-home-repo/assets/bing.jpg /opt/web-home/current/assets/
+            fi
+        fi
+    else
+        echo "[WARN] 无法获取Bing图片URL"
+        # 使用仓库中的背景图片
+        if [ -f "/tmp/web-home-repo/web/assets/bing.jpg" ]; then
+            cp /tmp/web-home-repo/web/assets/bing.jpg /opt/web-home/current/assets/
+        elif [ -f "/tmp/web-home-repo/assets/bing.jpg" ]; then
+            cp /tmp/web-home-repo/assets/bing.jpg /opt/web-home/current/assets/
+        fi
+    fi
 else
-    echo "    ⚠️  未找到bing.jpg背景图片，将使用默认路径"
+    echo "[WARN] 无法连接到Bing API"
+    # 使用仓库中的背景图片
+    if [ -f "/tmp/web-home-repo/web/assets/bing.jpg" ]; then
+        cp /tmp/web-home-repo/web/assets/bing.jpg /opt/web-home/current/assets/
+    elif [ -f "/tmp/web-home-repo/assets/bing.jpg" ]; then
+        cp /tmp/web-home-repo/assets/bing.jpg /opt/web-home/current/assets/
+    fi
+fi
+
+cd - > /dev/null
+
+# 验证背景图片是否存在
+if [ -f "/opt/web-home/current/assets/bing.jpg" ]; then
+    echo "[INFO] 背景图片已准备: /opt/web-home/current/assets/bing.jpg"
+else
+    echo "[WARN] 未找到背景图片，将创建空文件"
+    touch /opt/web-home/current/assets/bing.jpg
 fi
 
 # 设置文件权限
@@ -321,13 +367,14 @@ chmod -R 755 /opt/web-home/current
 
 # 清理临时文件
 rm -rf /tmp/web-home-repo
+rm -rf /tmp/bing-image
 
 echo "[INFO] 主页部署完成"
 
 # -----------------------------
-# 步骤 9：配置 Nginx（包含所有服务反代）
+# 步骤 9：配置 Nginx（修复S-UI反代问题）
 # -----------------------------
-echo "[9/12] 配置 Nginx（包含S-UI和AdGuard Home反代）"
+echo "[9/13] 配置 Nginx（修复S-UI反代问题）"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 80;
@@ -359,7 +406,7 @@ server {
         add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
     }
     
-    # 静态资源
+    # 静态资源 - 背景图片等
     location /assets/ {
         root /opt/web-home/current;
         expires 1d;
@@ -417,8 +464,67 @@ server {
         }
     }
     
-    # S-UI面板反向代理 - 使用根路径重写
-    location /sui/ {
+    # ============================================
+    # S-UI面板反向代理 - 完整修复方案
+    # ============================================
+    
+    # S-UI主路径 - 处理所有/sui/下的请求
+    location ~ ^/sui/(?<path>.*) {
+        proxy_pass https://127.0.0.1:2095/\$path\$is_args\$query_string;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Prefix /sui;
+        
+        # 修复重定向问题
+        proxy_redirect ~^https://127.0.0.1:2095/(.*) /sui/\$1;
+        proxy_redirect ~^https://\$host:2095/(.*) /sui/\$1;
+        proxy_redirect ~^/(.*) /sui/\$1;
+        
+        # 修改响应内容中的路径
+        sub_filter_once off;
+        sub_filter_types text/html text/css text/javascript application/javascript application/json;
+        
+        # 修复HTML中的路径
+        sub_filter 'href="/' 'href="/sui/';
+        sub_filter 'src="/' 'src="/sui/';
+        sub_filter 'action="/' 'action="/sui/';
+        sub_filter 'url("/' 'url("/sui/';
+        sub_filter "url('/" "url('/sui/";
+        
+        # 修复JSON响应中的路径
+        sub_filter '"/api/' '"/sui/api/';
+        sub_filter '"/static/' '"/sui/static/';
+        sub_filter '"/app/' '"/sui/app/';
+        
+        # 修复JavaScript中的路径
+        sub_filter 'fetch("/' 'fetch("/sui/';
+        sub_filter 'ajax("/' 'ajax("/sui/';
+        
+        # 修复绝对URL
+        sub_filter 'https://127.0.0.1:2095' 'https://\$host/sui';
+        sub_filter 'https://\$host:2095' 'https://\$host/sui';
+        sub_filter 'http://127.0.0.1:2095' 'https://\$host/sui';
+        sub_filter 'http://\$host:2095' 'https://\$host/sui';
+    }
+    
+    # 特殊处理S-UI的根路径重定向
+    location = /sui {
+        return 301 https://\$host/sui/;
+    }
+    
+    # 处理S-UI的直接路径（不带斜杠）
+    location /sui {
+        # 确保URI以/结尾
+        if (\$uri !~ /sui/) {
+            return 301 https://\$host/sui/\$is_args\$query_string;
+        }
+        # 如果已经以/结尾，则代理到后端
         proxy_pass https://127.0.0.1:2095/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
@@ -427,55 +533,27 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Prefix /sui;
         
-        # 重写响应中的URL，解决登录跳转问题
-        proxy_redirect https://127.0.0.1:2095/ https://\$host/sui/;
-        proxy_redirect https://\$host:2095/ https://\$host/sui/;
-        
-        # 修改HTML响应中的链接
+        # 同样的响应内容修改
         sub_filter_once off;
-        sub_filter_types text/html;
+        sub_filter_types text/html text/css text/javascript application/javascript application/json;
         sub_filter 'href="/' 'href="/sui/';
         sub_filter 'src="/' 'src="/sui/';
         sub_filter 'action="/' 'action="/sui/';
         sub_filter 'url("/' 'url("/sui/';
         sub_filter "url('/" "url('/sui/";
-        
-        # 处理可能的绝对路径
+        sub_filter '"/api/' '"/sui/api/';
+        sub_filter '"/static/' '"/sui/static/';
+        sub_filter '"/app/' '"/sui/app/';
         sub_filter 'https://127.0.0.1:2095' 'https://\$host/sui';
         sub_filter 'https://\$host:2095' 'https://\$host/sui';
-        
-        # 处理API路径
-        sub_filter '"/api/' '"/sui/api/';
     }
     
-    # S-UI API路径
-    location /sui/api/ {
-        proxy_pass https://127.0.0.1:2095/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-    
-    # S-UI静态资源
-    location /sui/static/ {
-        proxy_pass https://127.0.0.1:2095/static/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-    
-    # S-UI根路径重定向
-    location = /sui {
-        return 301 https://\$host/sui/;
-    }
-    
+    # ============================================
     # AdGuard Home反向代理
+    # ============================================
     location /adguard/ {
         proxy_pass http://127.0.0.1:3000/;
         proxy_set_header Host \$host;
@@ -553,16 +631,95 @@ else
 fi
 
 # -----------------------------
-# 步骤 10：创建自动更新脚本（带背景图片更新）
+# 步骤 10：创建Bing图片自动更新脚本
 # -----------------------------
-echo "[10/12] 创建自动更新脚本（包含背景图片更新）"
-cat > /usr/local/bin/update-web-home.sh <<'EOF'
+echo "[10/13] 创建Bing图片自动更新脚本"
+cat > /usr/local/bin/update-bing-image.sh <<'EOF'
 #!/bin/bash
-# Web主页自动更新脚本（包含背景图片）
+# Bing背景图片自动更新脚本
 set -e
 
-echo "[INFO] $(date) - 开始更新Web主页"
-cd /tmp
+echo "[INFO] $(date) - 开始更新Bing背景图片"
+
+# 创建临时目录
+TEMP_DIR="/tmp/bing-update-$(date +%s)"
+mkdir -p "$TEMP_DIR"
+cd "$TEMP_DIR"
+
+# 获取Bing图片信息
+echo "[INFO] 获取Bing图片信息..."
+BING_INFO=$(curl -s "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1")
+
+if [ $? -eq 0 ]; then
+    # 提取图片URL
+    IMG_URL=$(echo $BING_INFO | jq -r '.images[0].url' 2>/dev/null)
+    
+    if [ ! -z "$IMG_URL" ] && [ "$IMG_URL" != "null" ]; then
+        echo "[INFO] 发现Bing图片: $IMG_URL"
+        
+        # 下载图片
+        FULL_URL="https://www.bing.com${IMG_URL}"
+        echo "[INFO] 下载图片: $FULL_URL"
+        
+        if wget -q -O bing_new.jpg "$FULL_URL"; then
+            # 检查图片是否有效
+            IMG_SIZE=$(stat -c%s "bing_new.jpg")
+            if [ $IMG_SIZE -gt 10000 ]; then  # 图片大小至少10KB
+                # 备份旧图片
+                if [ -f "/opt/web-home/current/assets/bing.jpg" ]; then
+                    cp /opt/web-home/current/assets/bing.jpg "/opt/web-home/current/assets/bing_backup_$(date +%Y%m%d).jpg"
+                    echo "[INFO] 备份旧图片"
+                fi
+                
+                # 复制新图片
+                cp bing_new.jpg /opt/web-home/current/assets/bing.jpg
+                chown www-data:www-data /opt/web-home/current/assets/bing.jpg
+                chmod 644 /opt/web-home/current/assets/bing.jpg
+                
+                echo "[INFO] Bing背景图片已更新: /opt/web-home/current/assets/bing.jpg"
+                echo "[INFO] 图片大小: $((IMG_SIZE/1024)) KB"
+                
+                # 记录图片信息
+                echo "[INFO] 图片信息:"
+                echo "  URL: $FULL_URL" >> /var/log/bing-update.log
+                echo "  时间: $(date)" >> /var/log/bing-update.log
+                echo "  大小: $((IMG_SIZE/1024)) KB" >> /var/log/bing-update.log
+                
+                # 重载Nginx（如果需要）
+                systemctl reload nginx 2>/dev/null || true
+            else
+                echo "[ERROR] 下载的图片太小，可能无效"
+                exit 1
+            fi
+        else
+            echo "[ERROR] 下载Bing图片失败"
+            exit 1
+        fi
+    else
+        echo "[ERROR] 无法获取Bing图片URL"
+        exit 1
+    fi
+else
+    echo "[ERROR] 无法连接到Bing API"
+    exit 1
+fi
+
+# 清理临时文件
+cd ..
+rm -rf "$TEMP_DIR"
+
+echo "[INFO] 背景图片更新完成"
+EOF
+
+chmod +x /usr/local/bin/update-bing-image.sh
+
+# 创建主页和Bing图片自动更新脚本
+cat > /usr/local/bin/update-web-home.sh <<'EOF'
+#!/bin/bash
+# Web主页和Bing图片自动更新脚本
+set -e
+
+echo "[INFO] $(date) - 开始更新Web主页和Bing图片"
 
 # 备份当前版本
 BACKUP_DIR="/opt/web-home/backup"
@@ -587,22 +744,11 @@ if git clone https://github.com/about300/vps-deployment.git /tmp/web-home-update
         SRC_DIR="/tmp/web-home-update/web"
     fi
     
-    # 复制所有文件
-    cp -r "$SRC_DIR"/* /opt/web-home/current/
+    # 复制所有文件（排除assets目录中的bing.jpg）
+    find "$SRC_DIR" -type f ! -path "*/assets/bing.jpg" -exec cp --parents {} /opt/web-home/current/ \;
     
     # 确保assets目录存在
     mkdir -p /opt/web-home/current/assets
-    
-    # 复制背景图片（如果存在）
-    if [ -f "/tmp/web-home-update/web/assets/bing.jpg" ]; then
-        cp /tmp/web-home-update/web/assets/bing.jpg /opt/web-home/current/assets/
-        echo "[INFO] 已更新背景图片: bing.jpg"
-    elif [ -f "/tmp/web-home-update/assets/bing.jpg" ]; then
-        cp /tmp/web-home-update/assets/bing.jpg /opt/web-home/current/assets/
-        echo "[INFO] 已更新背景图片: bing.jpg"
-    else
-        echo "[WARN] 未找到背景图片，使用现有图片"
-    fi
     
     # 替换域名和端口（如果index.html中有占位符）
     if [ -f "/opt/web-home/current/index.html" ]; then
@@ -616,11 +762,19 @@ if git clone https://github.com/about300/vps-deployment.git /tmp/web-home-update
         sed -i "s|\\\${VLESS_PORT}|$VLESS_PORT|g" /opt/web-home/current/index.html 2>/dev/null || true
         sed -i "s|DOMAIN_PLACEHOLDER|$DOMAIN|g" /opt/web-home/current/index.html 2>/dev/null || true
         sed -i "s|VLESS_PORT_PLACEHOLDER|$VLESS_PORT|g" /opt/web-home/current/index.html 2>/dev/null || true
+        
+        # 确保背景图片路径正确
+        sed -i 's|url("background.jpg")|url("/assets/bing.jpg")|g' /opt/web-home/current/index.html 2>/dev/null || true
+        sed -i 's|url("/assets/background.jpg")|url("/assets/bing.jpg")|g' /opt/web-home/current/index.html 2>/dev/null || true
     fi
     
     # 设置权限
     chown -R www-data:www-data /opt/web-home/current
     chmod -R 755 /opt/web-home/current
+    
+    # 更新Bing背景图片（如果不在GitHub仓库中）
+    echo "[INFO] 更新Bing背景图片..."
+    /usr/local/bin/update-bing-image.sh
     
     # 重载Nginx
     systemctl reload nginx
@@ -648,20 +802,29 @@ chmod +x /usr/local/bin/update-web-home.sh
 # 创建手动更新命令
 cat > /usr/local/bin/update-home <<'EOF'
 #!/bin/bash
-echo "开始手动更新Web主页..."
+echo "开始手动更新Web主页和Bing背景图片..."
 /usr/local/bin/update-web-home.sh
 EOF
 chmod +x /usr/local/bin/update-home
 
-# 添加cron任务（每天凌晨3点更新）
-(crontab -l 2>/dev/null; echo "0 3 * * * /usr/local/bin/update-web-home.sh >> /var/log/web-home-update.log 2>&1") | crontab -
+# 创建单独的Bing图片更新命令
+cat > /usr/local/bin/update-bing <<'EOF'
+#!/bin/bash
+echo "开始手动更新Bing背景图片..."
+/usr/local/bin/update-bing-image.sh
+EOF
+chmod +x /usr/local/bin/update-bing
 
-echo "[INFO] 已设置自动更新任务（每天凌晨3点）"
+# 添加cron任务（每天凌晨4点更新）
+(crontab -l 2>/dev/null; echo "# 每天凌晨4点更新主页和Bing图片"; echo "0 4 * * * /usr/local/bin/update-web-home.sh >> /var/log/web-home-update.log 2>&1") | crontab -
+(crontab -l 2>/dev/null; echo "# 每天中午12点更新Bing图片（作为备份）"; echo "0 12 * * * /usr/local/bin/update-bing-image.sh >> /var/log/bing-update.log 2>&1") | crontab -
+
+echo "[INFO] 已设置自动更新任务（每天凌晨4点和中午12点）"
 
 # -----------------------------
 # 步骤 11：创建服务检查脚本
 # -----------------------------
-echo "[11/12] 创建服务检查脚本"
+echo "[11/13] 创建服务检查脚本"
 cat > /usr/local/bin/check-services.sh <<EOF
 #!/bin/bash
 echo "=== VPS 服务状态检查 ==="
@@ -693,15 +856,21 @@ echo ""
 echo "4. 背景图片检查:"
 if [ -f "/opt/web-home/current/assets/bing.jpg" ]; then
     echo "   ✅ 背景图片存在: /opt/web-home/current/assets/bing.jpg"
-    echo "   文件大小: \$(ls -lh /opt/web-home/current/assets/bing.jpg | awk '{print \$5}')"
+    IMG_SIZE=\$(stat -c%s "/opt/web-home/current/assets/bing.jpg" 2>/dev/null || echo 0)
+    echo "   文件大小: \$((IMG_SIZE/1024)) KB"
+    echo "   修改时间: \$(stat -c %y "/opt/web-home/current/assets/bing.jpg" 2>/dev/null | cut -d' ' -f1)"
 else
-    echo "   ⚠️  背景图片不存在"
-    echo "   [INFO] 在以下位置查找:"
-    find /opt/web-home/current -name "*.jpg" -o -name "*.png" | head -5
+    echo "   ❌ 背景图片不存在"
 fi
+
 echo ""
 
-echo "5. 访问路径:"
+echo "5. SSL证书路径:"
+echo "   • /etc/nginx/ssl/\$DOMAIN/fullchain.pem"
+echo "   • /etc/nginx/ssl/\$DOMAIN/key.pem"
+echo ""
+
+echo "6. 访问路径:"
 echo "   主页:        https://\$DOMAIN/"
 echo "   S-UI面板:    https://\$DOMAIN/sui/"
 echo "   AdGuard Home: https://\$DOMAIN/adguard/"
@@ -709,14 +878,30 @@ echo "   订阅转换:     https://\$DOMAIN/subconvert/"
 echo "   直接访问:"
 echo "     S-UI:     https://\$DOMAIN:2095"
 echo "     AdGuard:  https://\$DOMAIN:3000"
+echo ""
+
+echo "7. 自动更新状态:"
+echo "   Bing图片更新脚本: \$(ls /usr/local/bin/update-bing-image.sh 2>/dev/null && echo '✅ 已安装' || echo '❌ 未安装')"
+echo "   主页更新脚本: \$(ls /usr/local/bin/update-web-home.sh 2>/dev/null && echo '✅ 已安装' || echo '❌ 未安装')"
+echo "   Cron任务: \$(crontab -l 2>/dev/null | grep -c 'update' || echo '0') 个更新任务"
 EOF
 
 chmod +x /usr/local/bin/check-services.sh
 
 # -----------------------------
-# 步骤 12：验证部署
+# 步骤 12：立即更新Bing背景图片
 # -----------------------------
-echo "[12/12] 验证部署状态"
+echo "[12/13] 立即更新Bing背景图片"
+if /usr/local/bin/update-bing-image.sh; then
+    echo "[INFO] Bing背景图片更新成功"
+else
+    echo "[WARN] Bing背景图片更新失败，但继续部署"
+fi
+
+# -----------------------------
+# 步骤 13：验证部署
+# -----------------------------
+echo "[13/13] 验证部署状态"
 sleep 5
 
 echo ""
@@ -749,24 +934,30 @@ if [ -f "/opt/web-home/current/index.html" ]; then
     echo "   ✅ 主页文件存在"
     # 检查背景图片
     if [ -f "/opt/web-home/current/assets/bing.jpg" ]; then
-        echo "   ✅ 背景图片存在: /opt/web-home/current/assets/bing.jpg"
+        IMG_SIZE=$(stat -c%s "/opt/web-home/current/assets/bing.jpg" 2>/dev/null || echo 0)
+        echo "   ✅ 背景图片存在: /opt/web-home/current/assets/bing.jpg ($((IMG_SIZE/1024)) KB)"
     else
-        echo "   ⚠️  背景图片不存在，将在下次更新时获取"
+        echo "   ⚠️  背景图片不存在"
     fi
 else
     echo "   ⚠️  主页文件不存在"
 fi
 
 echo ""
-echo "3. 路径架构:"
-echo "   • 主站: / (独立资源路径)"
-echo "   • Sub-Web: /subconvert/ (专属路径)"
-echo "   • S-UI面板: /sui/ (通过Nginx反代，解决登录跳转)"
-echo "   • AdGuard Home: /adguard/ (通过Nginx反代)"
-echo "   • 所有服务使用同一个域名，不同路径访问"
-
+echo "3. SSL证书路径:"
+echo "   • /etc/nginx/ssl/$DOMAIN/fullchain.pem"
+echo "   • /etc/nginx/ssl/$DOMAIN/key.pem"
 echo ""
-echo "4. 访问地址:"
+
+echo "4. S-UI面板反代修复说明:"
+echo "   ✅ 使用正则表达式匹配所有/sui/路径"
+echo "   ✅ 修复了/app路径跳转问题"
+echo "   ✅ 添加了X-Forwarded-Prefix头部"
+echo "   ✅ 全面过滤HTML/CSS/JS/JSON中的路径"
+echo "   ✅ 处理了直接路径和带斜杠路径的两种情况"
+echo ""
+
+echo "5. 访问地址:"
 echo "   • 主页面: https://$DOMAIN"
 echo "   • S-UI面板: https://$DOMAIN/sui/"
 echo "   • AdGuard Home: https://$DOMAIN/adguard/"
@@ -787,11 +978,11 @@ echo "====================================="
 echo ""
 echo "📋 核心修复:"
 echo ""
-echo "  ✅ S-UI面板反代: 通过/sub/路径访问，使用Nginx sub_filter修复跳转"
-echo "  ✅ AdGuard Home反代: 通过/adguard/路径访问"
-echo "  ✅ 背景图片支持: 自动从GitHub仓库获取bing.jpg"
+echo "  ✅ S-UI面板反代: 彻底修复/app路径跳转问题"
+echo "  ✅ Bing背景图片: 自动获取每日Bing壁纸作为网站背景"
+echo "  ✅ SSL证书路径: 完整显示证书文件位置"
+echo "  ✅ 自动更新: 每天自动更新Bing背景图片"
 echo "  ✅ 路径完全隔离: 所有服务使用独立路径，避免冲突"
-echo "  ✅ 自动更新: 主页和背景图片每天自动更新"
 echo ""
 echo "🌐 访问地址 (全部使用 $DOMAIN):"
 echo ""
@@ -801,14 +992,25 @@ echo "   AdGuard Home: https://$DOMAIN/adguard/"
 echo "   订阅转换前端:  https://$DOMAIN/subconvert/"
 echo "   订阅转换API:   https://$DOMAIN/sub/api/"
 echo ""
+echo "🔐 SSL证书路径:"
+echo "   • /etc/nginx/ssl/$DOMAIN/fullchain.pem"
+echo "   • /etc/nginx/ssl/$DOMAIN/key.pem"
+echo ""
+echo "🖼️ Bing背景图片:"
+echo "   • 自动获取每日Bing壁纸"
+echo "   • 每天凌晨4点和中午12点自动更新"
+echo "   • 图片路径: /opt/web-home/current/assets/bing.jpg"
+echo "   • 网页访问: https://$DOMAIN/assets/bing.jpg"
+echo ""
 echo "🔄 自动更新:"
-echo "   • 主页和背景图片每天凌晨3点自动更新"
-echo "   • 背景图片来源: vps-deployment/web/assets/bing.jpg"
-echo "   • 手动更新命令: update-home"
+echo "   • 主页和Bing图片每天自动更新"
+echo "   • 手动更新主页: update-home"
+echo "   • 手动更新Bing图片: update-bing"
 echo ""
 echo "🛠️ 管理命令:"
 echo "  • 服务状态: check-services.sh"
 echo "  • 更新主页: update-home"
+echo "  • 更新Bing图片: update-bing"
 echo "  • 查看日志: journalctl -u 服务名 -f"
 echo ""
 echo "📁 重要目录:"
@@ -833,7 +1035,10 @@ echo "1. 主页面: https://$DOMAIN"
 echo "2. S-UI面板: https://$DOMAIN/sui/"
 echo "3. AdGuard Home: https://$DOMAIN/adguard/"
 echo ""
-echo "💡 提示: 如果S-UI面板登录后有问题，请尝试:"
-echo "  1. 清除浏览器缓存"
-echo "  2. 或直接访问: https://$DOMAIN:2095"
+echo "💡 S-UI面板测试步骤:"
+echo "  1. 访问 https://$DOMAIN/sui/"
+echo "  2. 登录后应保持在/sui/路径下，不会跳转到主页"
+echo "  3. 如果仍有问题，尝试清除浏览器缓存"
 echo ""
+echo "🖼️ Bing背景图片:"
+echo "  网站将使用今日Bing壁纸作为背景，图片每天自动更新。"

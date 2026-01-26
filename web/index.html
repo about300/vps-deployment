@@ -133,18 +133,21 @@
     const protocol = location.protocol === 'file:' ? 'http:' : location.protocol;
     const host = location.hostname;
 
-    const SUI_URL = protocol + '//' + host + '/app';
+    // 修复：将 /app 改为 /sui/，以匹配Nginx反代配置
+    const SUI_URL = protocol + '//' + host + '/sui/';
     const ADGUARD_URL = protocol + '//' + host + '/adguard/';
 
+    // 更新所有S-UI链接
     document.getElementById('sui-link').href = SUI_URL;
     document.getElementById('sui-card').href = SUI_URL;
     document.getElementById('adguard-card').href = ADGUARD_URL;
 
     // ⚠️ 注意：这里不再渲染端口号
+    // 修复：将S-UI检查路径从 /app/ 改为 /sui/
     const services = [
       { name: 'Web 服务', icon: 'fa-server', check: '/' },
-      { name: '订阅转换', icon: 'fa-exchange-alt', check: '/subconvert/version' },
-      { name: 'S-UI 面板', icon: 'fa-gauge-high', check: '/app/' },
+      { name: '订阅转换', icon: 'fa-exchange-alt', check: '/subconvert/' },
+      { name: 'S-UI 面板', icon: 'fa-gauge-high', check: '/sui/' },
       { name: 'AdGuard', icon: 'fa-shield-halved', check: '/adguard/' }
     ];
 
@@ -160,7 +163,8 @@
       `;
       grid.appendChild(card);
 
-      fetch(s.check, { method: 'GET' })
+      // 使用HEAD方法检查服务状态，减少数据传输
+      fetch(s.check, { method: 'HEAD', cache: 'no-cache' })
         .then(r => {
           card.classList.remove('loading');
           card.classList.add(r.ok ? 'online' : 'offline');
@@ -171,6 +175,14 @@
           card.classList.add('offline');
           card.querySelector('span').textContent = '离线';
         });
+    });
+    
+    // 添加页面加载完成的提示
+    window.addEventListener('load', function() {
+      console.log('VPS Dashboard 加载完成');
+      console.log('S-UI面板地址:', SUI_URL);
+      console.log('AdGuard Home地址:', ADGUARD_URL);
+      console.log('背景图片地址:', '/assets/bing.jpg');
     });
   </script>
 

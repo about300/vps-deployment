@@ -24,7 +24,7 @@ jobs:
       - name: Download Bing image
         run: |
           IMG_URL=$(jq -r '.images[0].url' bing.json)
-          mkdir -p web/assets
+          mkdir -p assets
           curl -L "https://www.bing.com${IMG_URL}" -o assets/bing.jpg
 
       - name: Commit and push if changed
@@ -32,7 +32,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          git add web/assets/bing.jpg
+          git add assets/bing.jpg
 
           if git diff --cached --quiet; then
             echo "Bing image not changed, skip commit"

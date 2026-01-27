@@ -2,18 +2,17 @@
 set -e
 
 ##############################
-# VPS 全栈部署脚本 (最终反代版)
-# Version: v6.1.0
+# VPS 全栈部署脚本 (回滚版)
+# Version: v6.2.0
 # Author: Auto-generated
 ##############################
 
-echo "===== VPS 全栈部署 v6.1.0 ====="
+echo "===== VPS 全栈部署 v6.2.0 ====="
 
 # 版本信息
-SCRIPT_VERSION="6.1.0"
+SCRIPT_VERSION="6.2.0"
 echo "版本: v${SCRIPT_VERSION}"
-echo "说明: 尝试强力反代方案，如失败可回滚到端口访问"
-echo "回滚指令: 在下次对话中输入'回滚'即可"
+echo "说明: 回滚到端口访问模式，S-UI使用根目录"
 echo ""
 
 # Cloudflare API 权限提示
@@ -51,8 +50,8 @@ WEB_HOME_REPO="https://github.com/about300/vps-deployment.git"
 
 echo "[INFO] 访问路径："
 echo "  • 主域名: https://$DOMAIN"
-echo "  • S-UI面板: https://$DOMAIN/sui/ (反代)"
-echo "  • AdGuard Home: https://$DOMAIN/adguard/ (反代)"
+echo "  • S-UI面板: https://$DOMAIN:2095 (根目录，端口访问)"
+echo "  • AdGuard Home: https://$DOMAIN:3000 (端口访问)"
 echo "  • 订阅转换: https://$DOMAIN/subconvert/"
 echo "  • VLESS端口: $VLESS_PORT"
 echo ""
@@ -84,7 +83,7 @@ ufw status numbered
 # 步骤 3：安装 SSL 证书
 echo "[3/11] 安装 SSL 证书"
 if [ ! -d "$HOME/.acme.sh" ]; then
-    curl https://get.acme.sh | sh
+    curl https::com//get.acme.sh | sh
     source ~/.bashrc
 fi
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
@@ -173,6 +172,15 @@ fi
 # 步骤 6：安装 S-UI 面板
 echo "[6/11] 安装 S-UI 面板"
 echo "[INFO] 使用官方安装脚本安装 S-UI 面板..."
+echo "[INFO] 注意：请设置S-UI面板使用根目录 (path: /)"
+echo ""
+echo "运行以下命令手动安装（推荐手动设置根目录）："
+echo "bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)"
+echo ""
+echo "或按回车键继续自动安装（使用默认配置）..."
+read -p "按回车键继续..." dummy
+
+# 自动安装S-UI（使用默认根目录）
 bash <(curl -Ls https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh)
 echo "[INFO] S-UI 面板安装完成"
 
@@ -189,7 +197,7 @@ fi
 
 cd - > /dev/null
 
-# 步骤 8：部署主页
+# 步骤 8：部署主页（使用端口访问链接）
 echo "[8/11] 从GitHub部署主页"
 rm -rf /opt/web-home
 mkdir -p /opt/web-home/current
@@ -229,13 +237,28 @@ fi
 
 cd - > /dev/null
 
-# 更新HTML使用反代路径
-echo "[INFO] 更新主页链接为反代路径..."
+# 更新HTML使用端口访问
+echo "[INFO] 更新主页链接为端口访问..."
 if [ -f "/opt/web-home/current/index.html" ]; then
-    sed -i "s|https://\$host:2095|https://\$host/sui/|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|'https://' + currentDomain + ':2095'|'/sui/'|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|\"https://\" + currentDomain + \":2095\"|\"/sui/\"|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|https://\$host:3000|https://\$host/adguard/|g" /opt/web-home/current/index.html 2>/dev/null || true
+    # 备份原文件
+    cp /opt/web-home/current/index.html /opt/web-home/current/index.html.backup
+    
+    # 使用直接端口访问链接
+    sed -i 's|href="/sui/"|href="https://'"$DOMAIN"':2095"|g' /opt/web-home/current/index.html 2>/dev/null || true
+    sed -i 's|'"'/sui/'"'|'"'https://'"$DOMAIN"':2095'"'|g' /opt/web-home/current/index.html 2>/dev/null || true
+    sed -i 's|/sui/|https://'"$DOMAIN"':2095|g' /opt/web-home/current/index.html 2>/dev/null || true
+    sed -i 's|/adguard/|https://'"$DOMAIN"':3000|g' /opt/web-home/current/index.html 2>/dev/null || true
+    
+    # 确保所有S-UI链接都指向端口
+    sed -i 's|https://\$host/sui/|https://'"$DOMAIN"':2095|g' /opt/web-home/current/index.html 2>/dev/null || true
+    sed -i 's|'\''/sui/'\''|'\''https://'"$DOMAIN"':2095'\''|g' /opt/web-home/current/index.html 2>/dev/null || true
+    sed -i 's|"/sui/"|"https://'"$DOMAIN"':2095"|g' /opt/web-home/current/index.html 2>/dev/null || true
+    
+    # 更新服务检查路径
+    sed -i 's|check: '\''/sui/'\''|check: '\''https://'"$DOMAIN"':2095'\''|g' /opt/web-home/current/index.html 2>/dev/null || true
+    sed -i 's|check: \"/sui/\"|check: \"https://'"$DOMAIN"':2095\"|g' /opt/web-home/current/index.html 2>/dev/null || true
+    
+    echo "[INFO] 主页链接已更新为端口访问"
 fi
 
 chown -R www-data:www-data /opt/web-home/current
@@ -244,8 +267,8 @@ chmod -R 755 /opt/web-home/current
 rm -rf /tmp/web-home-repo
 rm -rf /tmp/bing-image
 
-# 步骤 9：配置 Nginx（强力反代配置）
-echo "[9/11] 配置 Nginx（强力反代）"
+# 步骤 9：配置 Nginx（仅主站和订阅转换）
+echo "[9/11] 配置 Nginx"
 cat >/etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 80;
@@ -304,141 +327,6 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
     
-    # ==================== S-UI面板强力反代 ====================
-    location /sui/ {
-        proxy_pass https://127.0.0.1:2095/;
-        proxy_http_version 1.1;
-        
-        # 基础头
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Prefix /sui;
-        
-        # WebSocket支持
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        # 重定向
-        proxy_redirect https://127.0.0.1:2095/ https://\$host/sui/;
-        proxy_redirect https://\$host:2095/ https://\$host/sui/;
-        proxy_redirect http://127.0.0.1:2095/ https://\$host/sui/;
-        
-        # 超时
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-        
-        # 禁用缓存
-        proxy_no_cache 1;
-        proxy_cache_bypass 1;
-        
-        # ========== 强力内容重写 ==========
-        proxy_set_header Accept-Encoding "";
-        sub_filter_types *;
-        sub_filter_once off;
-        
-        # 重写所有HTML路径
-        sub_filter 'href="/' 'href="/sui/';
-        sub_filter 'src="/' 'src="/sui/';
-        sub_filter 'action="/' 'action="/sui/';
-        sub_filter 'url("/' 'url("/sui/';
-        sub_filter "url('/" "url('/sui/";
-        
-        # 重写API路径
-        sub_filter '"/api/' '"/sui/api/';
-        sub_filter "'/api/" "'/sui/api/";
-        
-        # 重写静态资源
-        sub_filter '"/static/' '"/sui/static/';
-        sub_filter "'/static/" "'/sui/static/";
-        
-        # 重写绝对URL
-        sub_filter 'https://127.0.0.1:2095' 'https://\$host/sui';
-        sub_filter 'https://\$host:2095' 'https://\$host/sui';
-        
-        # 重写登录相关路径
-        sub_filter '"/login"' '"/sui/login"';
-        sub_filter "'/login'" "'/sui/login'";
-        
-        # 允许所有请求方法
-        proxy_method GET;
-        proxy_method POST;
-        proxy_method PUT;
-        proxy_method DELETE;
-        proxy_method OPTIONS;
-    }
-    
-    # S-UI API路径特殊处理
-    location /sui/api/ {
-        proxy_pass https://127.0.0.1:2095/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-    
-    # S-UI静态资源
-    location /sui/static/ {
-        proxy_pass https://127.0.0.1:2095/static/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-    
-    # S-UI根路径重定向
-    location = /sui {
-        return 301 https://\$host/sui/;
-    }
-    
-    # ==================== AdGuard Home反代 ====================
-    location /adguard/ {
-        proxy_pass http://127.0.0.1:3000/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        proxy_redirect http://127.0.0.1:3000/ https://\$host/adguard/;
-        proxy_redirect http://\$host:3000/ https://\$host/adguard/;
-        
-        # 内容重写
-        sub_filter_once off;
-        sub_filter_types text/html text/css text/javascript;
-        sub_filter 'href="/' 'href="/adguard/';
-        sub_filter 'src="/' 'src="/adguard/';
-        sub_filter 'action="/' 'action="/adguard/';
-        sub_filter 'url("/' 'url("/adguard/';
-    }
-    
-    # AdGuard控制接口
-    location /adguard/control/ {
-        proxy_pass http://127.0.0.1:3000/control/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-    
-    # AdGuard根路径重定向
-    location = /adguard {
-        return 301 https://\$host/adguard/;
-    }
-    
     access_log /var/log/nginx/main_access.log;
     error_log /var/log/nginx/main_error.log;
 }
@@ -459,225 +347,7 @@ fi
 
 # 步骤 10：创建自动更新脚本
 echo "[10/11] 创建自动更新脚本"
-cat > /usr/local/bin/update-web-home.sh <<'EOF'
-#!/bin/bash
-set -e
-
-echo "[INFO] $(date) - 开始更新Web主页"
-cd /tmp
-
-BACKUP_DIR="/opt/web-home/backup"
-mkdir -p "$BACKUP_DIR"
-BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
-if [ -d "/opt/web-home/current" ]; then
-    cp -r /opt/web-home/current "$BACKUP_DIR/$BACKUP_NAME"
-fi
-
-rm -rf /tmp/web-home-update
-if git clone https://github.com/about300/vps-deployment.git /tmp/web-home-update; then
-    rm -rf /opt/web-home/current/*
-    
-    if [ -d "/tmp/web-home-update/web" ]; then
-        cp -r /tmp/web-home-update/web/* /opt/web-home/current/
-    else
-        cp -r /tmp/web-home-update/* /opt/web-home/current/
-    fi
-    
-    # 确保使用反代路径
-    if [ -f "/opt/web-home/current/index.html" ]; then
-        sed -i "s|https://\$host:2095|https://\$host/sui/|g" /opt/web-home/current/index.html 2>/dev/null || true
-        sed -i "s|'https://' + currentDomain + ':2095'|'/sui/'|g" /opt/web-home/current/index.html 2>/dev/null || true
-        sed -i "s|\"https://\" + currentDomain + \":2095\"|\"/sui/\"|g" /opt/web-home/current/index.html 2>/dev/null || true
-        sed -i "s|https://\$host:3000|https://\$host/adguard/|g" /opt/web-home/current/index.html 2>/dev/null || true
-    fi
-    
-    chown -R www-data:www-data /opt/web-home/current
-    chmod -R 755 /opt/web-home/current
-    
-    systemctl reload nginx
-    echo "[INFO] 主页更新成功！"
-else
-    echo "[ERROR] 从GitHub获取代码失败"
-    if [ -d "$BACKUP_DIR/$BACKUP_NAME" ]; then
-        rm -rf /opt/web-home/current/*
-        cp -r "$BACKUP_DIR/$BACKUP_NAME"/* /opt/web-home/current/
-    fi
-    exit 1
-fi
-
-rm -rf /tmp/web-home-update
-echo "[INFO] 更新完成"
-EOF
-
-chmod +x /usr/local/bin/update-web-home.sh
-
-cat > /usr/local/bin/update-home <<'EOF'
-#!/bin/bash
-echo "开始手动更新Web主页..."
-/usr/local/bin/update-web-home.sh
-EOF
-chmod +x /usr/local/bin/update-home
-
-# 添加cron任务
-(crontab -l 2>/dev/null; echo "0 3 * * * /usr/local/bin/update-web-home.sh >> /var/log/web-home-update.log 2>&1") | crontab -
-
-# 步骤 11：创建检查脚本和回滚脚本
-echo "[11/11] 创建检查脚本和回滚脚本"
-cat > /usr/local/bin/check-services.sh <<EOF
-#!/bin/bash
-echo "=== VPS 服务状态检查 ==="
-echo "时间: \$(date)"
-DOMAIN="${DOMAIN}"
-echo "域名: \$DOMAIN"
-echo ""
-
-echo "1. 服务状态:"
-echo "   Nginx: \$(systemctl is-active nginx)"
-echo "   SubConverter: \$(systemctl is-active subconverter)"
-echo "   S-UI: \$(systemctl is-active s-ui)"
-echo "   AdGuard Home: \$(systemctl is-active AdGuardHome)"
-echo ""
-
-echo "2. SSL证书路径:"
-echo "   • /etc/nginx/ssl/\$DOMAIN/fullchain.pem"
-echo "   • /etc/nginx/ssl/\$DOMAIN/key.pem"
-echo ""
-
-echo "3. 反代访问地址:"
-echo "   主页:        https://\$DOMAIN"
-echo "   S-UI面板:    https://\$DOMAIN/sui/"
-echo "   AdGuard Home: https://\$DOMAIN/adguard/"
-echo "   订阅转换:     https://\$DOMAIN/subconvert/"
-echo ""
-echo "4. 备用端口访问:"
-echo "   S-UI面板:    https://\$DOMAIN:2095"
-echo "   AdGuard Home: https://\$DOMAIN:3000"
-EOF
-
-chmod +x /usr/local/bin/check-services.sh
-
-# 创建回滚脚本
-cat > /usr/local/bin/rollback-to-ports.sh <<'EOF'
-#!/bin/bash
-# 回滚到端口访问模式
-
-set -e
-
-echo "=== 开始回滚到端口访问模式 ==="
-
-DOMAIN=$(cat /etc/nginx/sites-available/* | grep "server_name" | head -1 | awk '{print $2}' | tr -d ';')
-echo "检测到域名: $DOMAIN"
-
-# 1. 备份当前配置
-BACKUP_FILE="/etc/nginx/sites-available/${DOMAIN}.backup.$(date +%Y%m%d_%H%M%S)"
-cp "/etc/nginx/sites-available/${DOMAIN}" "$BACKUP_FILE"
-echo "✅ 已备份当前配置: $BACKUP_FILE"
-
-# 2. 创建端口访问的Nginx配置
-cat > "/etc/nginx/sites-available/${DOMAIN}" <<NGINX_CONFIG
-server {
-    listen 80;
-    server_name $DOMAIN;
-    return 301 https://\$server_name\$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name $DOMAIN;
-    
-    ssl_certificate /etc/nginx/ssl/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/$DOMAIN/key.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    
-    # 主页
-    location / {
-        root /opt/web-home/current;
-        index index.html;
-        try_files \$uri \$uri/ /index.html;
-    }
-    
-    # 静态资源
-    location /assets/ {
-        root /opt/web-home/current;
-        expires 1d;
-        add_header Cache-Control "public, max-age=86400";
-        try_files \$uri /assets/bing.jpg;
-    }
-    
-    location /css/ {
-        root /opt/web-home/current;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-    
-    location /js/ {
-        root /opt/web-home/current;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-    
-    # Sub-Web前端
-    location /subconvert/ {
-        alias /opt/sub-web-modify/dist/;
-        index index.html;
-        try_files \$uri \$uri/ /subconvert/index.html;
-    }
-    
-    # SubConverter API
-    location /sub/api/ {
-        proxy_pass http://127.0.0.1:25500/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-    
-    access_log /var/log/nginx/main_access.log;
-    error_log /var/log/nginx/main_error.log;
-}
-NGINX_CONFIG
-
-# 3. 更新HTML文件为端口访问
-if [ -f "/opt/web-home/current/index.html" ]; then
-    echo "🔄 更新主页链接为端口访问..."
-    cp /opt/web-home/current/index.html /opt/web-home/current/index.html.backup
-    
-    sed -i "s|https://\$host/sui/|https://\$host:2095|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|'/sui/'|'https://' + currentDomain + ':2095'|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|\"/sui/\"|\"https://\" + currentDomain + \":2095\"|g" /opt/web-home/current/index.html 2>/dev/null || true
-    sed -i "s|https://\$host/adguard/|https://\$host:3000|g" /opt/web-home/current/index.html 2>/dev/null || true
-    
-    echo "✅ 主页链接已更新为端口访问"
-fi
-
-# 4. 测试并重载Nginx
-echo "🔄 测试Nginx配置..."
-if nginx -t; then
-    echo "✅ Nginx配置测试成功"
-    systemctl reload nginx
-    echo "✅ Nginx已重载"
-    
-    echo ""
-    echo "========================================"
-    echo "🎉 回滚完成！"
-    echo ""
-    echo "访问地址:"
-    echo "   主页:        https://$DOMAIN"
-    echo "   S-UI面板:    https://$DOMAIN:2095"
-    echo "   AdGuard Home: https://$DOMAIN:3000"
-    echo "   订阅转换:     https://$DOMAIN/subconvert/"
-    echo ""
-    echo "💡 建议: 清除浏览器缓存后再访问"
-    echo "========================================"
-else
-    echo "❌ Nginx配置测试失败，恢复备份"
-    cp "$BACKUP_FILE" "/etc/nginx/sites-available/${DOMAIN}"
-    nginx -t
-    exit 1
-fi
-
-# 5. 更新自动更新脚本
-cat > /usr/local/bin/update-web-home.sh <<'UPDATE_EOF'
+cat > /usr/local/bin/update-web-home.sh <<EOF
 #!/bin/bash
 set -e
 
@@ -703,10 +373,18 @@ if git clone https://github.com/about300/vps-deployment.git /tmp/web-home-update
     
     # 确保使用端口访问
     if [ -f "/opt/web-home/current/index.html" ]; then
-        sed -i "s|https://\\\$host/sui/|https://\\\$host:2095|g" /opt/web-home/current/index.html 2>/dev/null || true
-        sed -i "s|'/sui/'|'https://' + currentDomain + ':2095'|g" /opt/web-home/current/index.html 2>/dev/null || true
-        sed -i "s|\"/sui/\"|\"https://\" + currentDomain + \":2095\"|g" /opt/web-home/current/index.html 2>/dev/null || true
-        sed -i "s|https://\\\$host/adguard/|https://\\\$host:3000|g" /opt/web-home/current/index.html 2>/dev/null || true
+        DOMAIN=\$(cat /etc/nginx/sites-available/* | grep "server_name" | head -1 | awk '{print \$2}' | tr -d ';')
+        
+        # 更新所有S-UI链接为端口访问
+        sed -i 's|href="/sui/"|href="https://'"\$DOMAIN"':2095"|g' /opt/web-home/current/index.html 2>/dev/null || true
+        sed -i 's|'"'/sui/'"'|'"'https://'"\$DOMAIN"':2095'"'|g' /opt/web-home/current/index.html 2>/dev/null || true
+        sed -i 's|/sui/|https://'"\$DOMAIN"':2095|g' /opt/web-home/current/index.html 2>/dev/null || true
+        sed -i 's|/adguard/|https://'"\$DOMAIN"':3000|g' /opt/web-home/current/index.html 2>/dev/null || true
+        
+        # 更新JavaScript中的链接
+        sed -i 's|https://\\\\\\\$host/sui/|https://'"\$DOMAIN"':2095|g' /opt/web-home/current/index.html 2>/dev/null || true
+        sed -i 's|'\''/sui/'\''|'\''https://'"\$DOMAIN"':2095'\''|g' /opt/web-home/current/index.html 2>/dev/null || true
+        sed -i 's|"/sui/"|"https://'"\$DOMAIN"':2095"|g' /opt/web-home/current/index.html 2>/dev/null || true
     fi
     
     chown -R www-data:www-data /opt/web-home/current
@@ -725,17 +403,73 @@ fi
 
 rm -rf /tmp/web-home-update
 echo "[INFO] 更新完成"
-UPDATE_EOF
-
-chmod +x /usr/local/bin/update-web-home.sh
-echo "✅ 自动更新脚本已更新为端口访问模式"
-
-echo ""
-echo "🎯 回滚操作完成！"
-echo "下次对话中如需回滚，只需输入'回滚'"
 EOF
 
-chmod +x /usr/local/bin/rollback-to-ports.sh
+chmod +x /usr/local/bin/update-web-home.sh
+
+cat > /usr/local/bin/update-home <<'EOF'
+#!/bin/bash
+echo "开始手动更新Web主页..."
+/usr/local/bin/update-web-home.sh
+EOF
+chmod +x /usr/local/bin/update-home
+
+# 添加cron任务
+(crontab -l 2>/dev/null; echo "0 3 * * * /usr/local/bin/update-web-home.sh >> /var/log/web-home-update.log 2>&1") | crontab -
+
+# 步骤 11：创建检查脚本
+echo "[11/11] 创建检查脚本"
+cat > /usr/local/bin/check-services.sh <<EOF
+#!/bin/bash
+echo "=== VPS 服务状态检查 ==="
+echo "时间: \$(date)"
+DOMAIN="${DOMAIN}"
+echo "域名: \$DOMAIN"
+echo ""
+
+echo "1. 服务状态:"
+echo "   Nginx: \$(systemctl is-active nginx 2>/dev/null || echo '未安装')"
+echo "   SubConverter: \$(systemctl is-active subconverter 2>/dev/null || echo '未安装')"
+echo "   S-UI: \$(systemctl is-active s-ui 2>/dev/null || echo '未安装')"
+echo "   AdGuard Home: \$(systemctl is-active AdGuardHome 2>/dev/null || echo '未安装')"
+echo ""
+
+echo "2. 端口监听:"
+echo "   443 (HTTPS): \$(ss -tln 2>/dev/null | grep ':443 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   2095 (S-UI): \$(ss -tln 2>/dev/null | grep ':2095 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   3000 (AdGuard): \$(ss -tln 2>/dev/null | grep ':3000 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo "   25500 (SubConverter): \$(ss -tln 2>/dev/null | grep ':25500 ' && echo '✅ 监听中' || echo '❌ 未监听')"
+echo ""
+
+echo "3. SSL证书路径:"
+echo "   • /etc/nginx/ssl/\$DOMAIN/fullchain.pem"
+echo "   • /etc/nginx/ssl/\$DOMAIN/key.pem"
+echo ""
+
+echo "4. 访问地址:"
+echo "   主页:        https://\$DOMAIN"
+echo "   S-UI面板:    https://\$DOMAIN:2095 (根目录，端口访问)"
+echo "   AdGuard Home: https://\$DOMAIN:3000 (端口访问)"
+echo "   订阅转换:     https://\$DOMAIN/subconvert/"
+echo ""
+
+echo "5. 目录检查:"
+echo "   主页目录: \$(ls -la /opt/web-home/current/ 2>/dev/null | wc -l) 个文件"
+echo "   Sub-Web前端: \$(ls -la /opt/sub-web-modify/dist/ 2>/dev/null | wc -l) 个文件"
+echo "   SubConverter: \$(ls -la /opt/subconverter/ 2>/dev/null | wc -l) 个文件"
+echo ""
+
+echo "6. 背景图片检查:"
+if [ -f "/opt/web-home/current/assets/bing.jpg" ]; then
+    echo "   ✅ 背景图片存在: /opt/web-home/current/assets/bing.jpg"
+    IMG_SIZE=\$(stat -c%s "/opt/web-home/current/assets/bing.jpg" 2>/dev/null || echo 0)
+    echo "   文件大小: \$((IMG_SIZE/1024)) KB"
+else
+    echo "   ❌ 背景图片不存在"
+fi
+EOF
+
+chmod +x /usr/local/bin/check-services.sh
 
 # 完成信息
 echo ""
@@ -743,39 +477,38 @@ echo "====================================="
 echo "🎉 VPS 全栈部署完成 v${SCRIPT_VERSION}"
 echo "====================================="
 echo ""
-echo "🌐 访问地址 (强力反代模式):"
+echo "📋 部署模式: 端口访问模式 (回滚版)"
+echo ""
+echo "🌐 访问地址:"
 echo ""
 echo "   主页面:        https://$DOMAIN"
-echo "   S-UI面板:     https://$DOMAIN/sui/"
-echo "   AdGuard Home: https://$DOMAIN/adguard/"
+echo "   S-UI面板:     https://$DOMAIN:2095 (根目录，直接端口访问)"
+echo "   AdGuard Home: https://$DOMAIN:3000 (端口访问)"
 echo "   订阅转换前端:  https://$DOMAIN/subconvert/"
 echo "   订阅转换API:   https://$DOMAIN/sub/api/"
 echo ""
-echo "🔧 备用访问 (端口访问):"
+echo "🔐 SSL证书路径:"
+echo "   • /etc/nginx/ssl/$DOMAIN/fullchain.pem"
+echo "   • /etc/nginx/ssl/$DOMAIN/key.pem"
 echo ""
-echo "   S-UI面板:     https://$DOMAIN:2095"
-echo "   AdGuard Home: https://$DOMAIN:3000"
+echo "🖼️ Bing背景图片:"
+echo "   • 每日自动更新Bing壁纸"
+echo "   • 路径: /opt/web-home/current/assets/bing.jpg"
 echo ""
-echo "🔄 回滚功能:"
-echo ""
-echo "   如果反代模式有问题，可运行以下命令回滚到端口访问:"
-echo "   rollback-to-ports.sh"
-echo ""
-echo "   或在下次对话中直接输入: 回滚"
+echo "🔄 自动更新:"
+echo "   • 主页每天自动更新"
+echo "   • 手动更新命令: update-home"
 echo ""
 echo "🛠️ 管理命令:"
-echo ""
 echo "   • 服务状态: check-services.sh"
 echo "   • 更新主页: update-home"
-echo "   • 回滚到端口: rollback-to-ports.sh"
+echo "   • 查看日志: journalctl -u 服务名 -f"
 echo ""
 echo "📁 重要目录:"
-echo ""
 echo "   • 主页: /opt/web-home/current/"
 echo "   • 背景图片: /opt/web-home/current/assets/bing.jpg"
 echo "   • Sub-Web: /opt/sub-web-modify/dist/"
 echo "   • SubConverter: /opt/subconverter/"
-echo "   • SSL证书: /etc/nginx/ssl/$DOMAIN/"
 echo ""
 echo "====================================="
 echo "部署时间: $(date)"
@@ -787,7 +520,18 @@ sleep 2
 bash /usr/local/bin/check-services.sh
 
 echo ""
-echo "💡 提示: 如果S-UI面板登录有问题，请尝试:"
-echo "   1. 清除浏览器缓存"
-echo "   2. 使用备用地址: https://$DOMAIN:2095"
-echo "   3. 运行回滚脚本: rollback-to-ports.sh"
+echo "💡 重要提示:"
+echo "   1. S-UI面板使用根目录，访问地址: https://$DOMAIN:2095"
+echo "   2. AdGuard Home访问地址: https://$DOMAIN:3000"
+echo "   3. 所有链接均已更新为端口访问模式"
+echo "   4. 主页中的S-UI链接指向 https://$DOMAIN:2095"
+echo ""
+
+# 清理旧的S-UI反代配置（如果存在）
+echo "[INFO] 清理旧的S-UI反代配置..."
+rm -f /etc/nginx/sites-available/sui-*.conf 2>/dev/null || true
+rm -f /etc/nginx/sites-enabled/sui-*.conf 2>/dev/null || true
+
+# 重新测试Nginx
+nginx -t && systemctl reload nginx
+echo "[INFO] Nginx配置已清理并重载"

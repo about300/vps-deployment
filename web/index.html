@@ -132,23 +132,23 @@
   <script>
     const protocol = location.protocol === 'file:' ? 'http:' : location.protocol;
     const host = location.hostname;
+    const currentDomain = location.host;
 
-    // 修复：将 /app 改为 /sui/，以匹配Nginx反代配置
-    const SUI_URL = protocol + '//' + host + '/sui/';
-    const ADGUARD_URL = protocol + '//' + host + '/adguard/';
+    // S-UI访问2095端口根目录
+    const SUI_URL = 'https://' + currentDomain + ':2095';
+    const ADGUARD_URL = 'https://' + currentDomain + ':3000';
 
     // 更新所有S-UI链接
     document.getElementById('sui-link').href = SUI_URL;
     document.getElementById('sui-card').href = SUI_URL;
     document.getElementById('adguard-card').href = ADGUARD_URL;
 
-    // ⚠️ 注意：这里不再渲染端口号
-    // 修复：将S-UI检查路径从 /app/ 改为 /sui/
+    // 服务检查配置 - 使用直接端口访问
     const services = [
       { name: 'Web 服务', icon: 'fa-server', check: '/' },
       { name: '订阅转换', icon: 'fa-exchange-alt', check: '/subconvert/' },
-      { name: 'S-UI 面板', icon: 'fa-gauge-high', check: '/sui/' },
-      { name: 'AdGuard', icon: 'fa-shield-halved', check: '/adguard/' }
+      { name: 'S-UI 面板', icon: 'fa-gauge-high', check: SUI_URL },
+      { name: 'AdGuard', icon: 'fa-shield-halved', check: ADGUARD_URL }
     ];
 
     const grid = document.getElementById('services-grid');
@@ -158,26 +158,42 @@
       card.className = 'service-card loading';
       card.innerHTML = `
         <div class="service-icon"><i class="fas ${s.icon}"></i></div>
-        <p>${s.name}</p>
-        <span>检测中…</span>
+        <div class="service-info">
+          <p>${s.name}</p>
+          <span>检测中…</span>
+        </div>
       `;
       grid.appendChild(card);
 
-      // 使用HEAD方法检查服务状态，减少数据传输
-      fetch(s.check, { method: 'HEAD', cache: 'no-cache' })
+      // 使用fetch检查服务状态，对外部服务使用no-cors模式
+      const checkService = () => {
+        fetch(s.check, { 
+          method: 'HEAD',
+          mode: s.name.includes('S-UI') || s.name.includes('AdGuard') ? 'no-cors' : 'same-origin',
+          cache: 'no-cache'
+        })
         .then(r => {
           card.classList.remove('loading');
-          card.classList.add(r.ok ? 'online' : 'offline');
-          card.querySelector('span').textContent = r.ok ? '在线' : '离线';
+          if (r.ok || r.status === 0) { // status 0 表示no-cors模式成功
+            card.classList.add('online');
+            card.querySelector('span').textContent = '在线';
+          } else {
+            card.classList.add('offline');
+            card.querySelector('span').textContent = '离线';
+          }
         })
         .catch(() => {
           card.classList.remove('loading');
           card.classList.add('offline');
           card.querySelector('span').textContent = '离线';
         });
+      };
+      
+      // 延迟检查
+      setTimeout(checkService, Math.random() * 1000);
     });
     
-    // 添加页面加载完成的提示
+    // 页面加载完成
     window.addEventListener('load', function() {
       console.log('VPS Dashboard 加载完成');
       console.log('S-UI面板地址:', SUI_URL);
